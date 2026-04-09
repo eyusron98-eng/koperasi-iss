@@ -41,6 +41,14 @@ const DAPUR = [
 // STAF_BELI dimuat dinamis dari Google Sheets (lihat App component)
 
 // ---- HELPERS ----
+// Normalize tanggal dari Google Sheets (bisa ISO string atau YYYY-MM-DD)
+function normDate(d) {
+  if (!d) return '';
+  const s = String(d);
+  if (s.includes('T')) return s.slice(0,10);
+  return s;
+}
+
 function fRp(n) {
   if (!n || isNaN(n)) return 'Rp 0';
   return 'Rp ' + Math.round(n).toLocaleString('id-ID');
@@ -433,7 +441,7 @@ function RekapBeli({orders, tugasBeli, onTugasSaved, stafBeli, allUsers}) {
   const belumBeli    = totalTugas - sudahBeli;
 
   const getNama = (stafId) => {
-    const u = allUsers.find(x=>x.username===stafId||x.id===stafId);
+    const u = (allUsers||[]).find(x=>x.username===stafId||x.id===stafId);
     return u ? u.name : stafId;
   };
 
@@ -584,26 +592,22 @@ function RekapBeli({orders, tugasBeli, onTugasSaved, stafBeli, allUsers}) {
 // STAF BELI
 // =============================================
 // Helper: normalize tanggal dari Google Sheets (bisa berupa ISO string atau sudah YYYY-MM-DD)
-function normDate(d) {
-  if (!d) return '';
-  const s = String(d);
-  if (s.includes('T')) return s.slice(0,10);
-  return s;
-}
-
+// =============================================
+// STAF BELI
+// =============================================
 function TugasBeli({user, tugasBeli, onHargaSaved, onStatusChanged, stafBeli, allUsers}) {
   const [hi,setHi]         = useState({});
   const [saving,setSaving] = useState({});
   const [konfirm,setKonfirm] = useState({});
   const today = new Date().toISOString().slice(0,10);
+  const safeUsers = allUsers || [];
 
-  // Ambil tugas hari ini dari semua staf (untuk saling lihat)
-  const semuaTugas = tugasBeli.filter(t => normDate(t.tanggal) === today || normDate(t.tanggal) === normDate(t.tanggal));
-  // Group per staf
-  const stafList = [...new Map(semuaTugas.map(t => [t.staf_id, t])).values()].map(t => t.staf_id);
+  // Tugas hari ini dari semua staf
+  const semuaTugas = tugasBeli.filter(t => normDate(t.tanggal) === today);
 
+  // Group per staf - tidak dipakai langsung tapi siap jika perlu
   const getNama = (stafId) => {
-    const u = allUsers.find(x => x.username === stafId || x.id === stafId);
+    const u = safeUsers.find(x => x.username === stafId || x.id === stafId);
     return u ? u.name : stafId;
   };
 
