@@ -38,7 +38,7 @@ const DAPUR = [
   {id:'sukamukti', nama:'Sukamukti',   pic:'Della Maldini', hp:'0882000476152',  alamat:'SPPG Sukamukti, Majalaya'},
   {id:'cipaku2',   nama:'Cipaku 2',    pic:'Bu Wati',       hp:'08444444444',    alamat:'SPPG Cipaku 2, Bandung'},
 ];
-// STAF_BELI dimuat dinamis dari backend — lihat state di App()
+// STAF_BELI dimuat dinamis dari Google Sheets (lihat App component)
 
 // ---- HELPERS ----
 function fRp(n) {
@@ -407,13 +407,15 @@ function InputOrder({onOrderAdded,setView}) {
 // =============================================
 // REKAP & TUGAS BELI
 // =============================================
-function RekapBeli({orders,tugasBeli,onTugasSaved,stafBeli}) {
-  const [sd,setSd]=useState(nextDay(new Date().toISOString().slice(0,10)));
-  const [asgn,setAsgn]=useState({});
-  const [saving,setSaving]=useState(false);
+function RekapBeli({orders, tugasBeli, onTugasSaved, stafBeli, allUsers}) {
+  const [sd,setSd]       = useState(nextDay(new Date().toISOString().slice(0,10)));
+  const [asgn,setAsgn]   = useState({});
+  const [saving,setSaving] = useState(false);
+  const [tab,setTab]     = useState('bagi'); // 'bagi' | 'monitor'
 
+  // Rekap kebutuhan dari order
   const ri = useMemo(()=>{
-    const ro = orders.filter(o=>(o.status==='draft'||o.status==='pending_kirim')&&o.tanggal_kirim===sd);
+    const ro = orders.filter(o=>(o.status==='draft'||o.status==='pending_kirim')&&normDate(o.tanggal_kirim)===sd);
     const m={};
     for(const o of ro) for(const it of o.items) {
       const k=it.nama+'|'+it.satuan;
@@ -423,20 +425,32 @@ function RekapBeli({orders,tugasBeli,onTugasSaved,stafBeli}) {
     return Object.values(m).sort((a,b)=>a.nama.localeCompare(b.nama));
   },[orders,sd]);
 
+  // Tugas beli untuk tanggal ini
+  const tugasHariIni = tugasBeli.filter(t => normDate(t.tanggal) === sd);
+  const totalTugas   = tugasHariIni.length;
+  const sudahBeli    = tugasHariIni.filter(t=>t.status==='bought'||t.status==='done').length;
+  const hargaTerisi  = tugasHariIni.filter(t=>t.status==='done').length;
+  const belumBeli    = totalTugas - sudahBeli;
+
+  const getNama = (stafId) => {
+    const u = allUsers.find(x=>x.username===stafId||x.id===stafId);
+    return u ? u.name : stafId;
+  };
+
   const sa=(nm,f,v)=>setAsgn(p=>({...p,[nm]:{...(p[nm]||{}),[f]:v}}));
 
   const save=async()=>{
     const tugas=ri.filter(it=>asgn[it.nama]?.staf).map(it=>({
-      id:'tgs-'+Date.now()+'-'+it.nama.replace(/\s/g,''),tanggal:sd,
-      staf_id:asgn[it.nama].staf,nama_bahan:it.nama,
-      qty:parseFloat(asgn[it.nama].qty)||it.total,satuan:it.satuan,harga_beli:0,status:'pending'
+      id:'tgs-'+Date.now()+'-'+it.nama.replace(/\s/g,''), tanggal:sd,
+      staf_id:asgn[it.nama].staf, nama_bahan:it.nama,
+      qty:parseFloat(asgn[it.nama].qty)||it.total, satuan:it.satuan, harga_beli:0, status:'pending'
     }));
-    if(!tugas.length){alert('Pilih staf untuk minimal satu item terlebih dahulu');return;}
+    if(!tugas.length){alert('Pilih staf untuk minimal satu item');return;}
     setSaving(true);
     try {
       const res = await api.post({action:'saveTugasBeli',tugas,tanggal:sd});
       if(res.success){onTugasSaved(tugas,sd);alert('Tugas tersimpan! '+tugas.length+' tugas dibagikan.');}
-      else alert('Gagal: '+(res.error||'Error'));
+      else alert('Gagal: '+(res.error||''));
     } catch(e){alert('Koneksi bermasalah');}
     setSaving(false);
   };
@@ -445,44 +459,123 @@ function RekapBeli({orders,tugasBeli,onTugasSaved,stafBeli}) {
     const ls=['*Tugas Beli Bahan - '+sd+'*',''];const bs={};
     for(const it of ri){const a=asgn[it.nama];if(a?.staf){const sn=stafBeli.find(s=>s.id===a.staf)?.nama||a.staf;if(!bs[sn])bs[sn]=[];bs[sn].push(`• ${it.nama}: ${parseFloat(a.qty)||it.total} ${it.satuan}`);}}
     for(const[sn,its]of Object.entries(bs)){ls.push(`*${sn}:*`);its.forEach(x=>ls.push(x));ls.push('');}
-    if(navigator.clipboard) navigator.clipboard.writeText(ls.join('\n')).then(()=>alert('Teks WA disalin ke clipboard!'));
-    else alert(ls.join('\n'));
+    if(navigator.clipboard) navigator.clipboard.writeText(ls.join('\n')).then(()=>alert('Teks WA disalin!'));
+  };
+
+  const statusBadgeTugas = (s) => {
+    if(s==='done')   return <span style={badge('suc')}>Harga ✓</span>;
+    if(s==='bought') return <span style={badge('war')}>Sudah beli</span>;
+    return <span style={{...badge('inf'),background:'#f3f4f6',color:'#6b7280'}}>Belum</span>;
   };
 
   return (
-    <div style={{padding:'1.5rem',maxWidth:'960px'}}>
-      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'1.5rem'}}>
+    <div style={{padding:'1.5rem',maxWidth:'980px'}}>
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'1rem'}}>
         <h2 style={{margin:0}}>Rekap & Tugas Beli</h2>
         <div style={{display:'flex',gap:'8px',alignItems:'center'}}>
-          <label style={{fontSize:'12px',color:'var(--color-text-secondary,#6b7280)'}}>Tgl Kirim:</label>
+          <label style={{fontSize:'12px',color:'#6b7280'}}>Tgl Kirim:</label>
           <input type="date" value={sd} onChange={e=>setSd(e.target.value)}/>
         </div>
       </div>
-      {!ri.length?<div style={{...cs.met,padding:'2rem',textAlign:'center',color:'var(--color-text-secondary,#6b7280)'}}>Tidak ada order aktif untuk tanggal {sd}</div>:
-      <><div style={cs.card}>
-        <div style={{fontSize:'14px',fontWeight:500,marginBottom:'12px'}}>Total Kebutuhan — {ri.length} item</div>
-        <div style={{overflowX:'auto'}}>
-          <table style={{width:'100%',borderCollapse:'collapse',fontSize:'13px'}}>
-            <thead><tr style={{borderBottom:'0.5px solid var(--color-border-tertiary,#e5e7eb)'}}>
-              {['Bahan','Total','Sat','Rincian per Dapur','Staf','Qty Beli'].map((h,i)=><th key={i} style={{...cs.th,textAlign:i===1||i===2?'right':'left'}}>{h}</th>)}
-            </tr></thead>
-            <tbody>{ri.map(it=><tr key={it.nama} style={{borderBottom:'0.5px solid var(--color-border-tertiary,#e5e7eb)'}}>
-              <td style={{...cs.td,fontWeight:500}}>{it.nama}</td>
-              <td style={{...cs.td,textAlign:'right',color:'#1e40af',fontWeight:600}}>{it.total}</td>
-              <td style={{...cs.td,textAlign:'right',color:'var(--color-text-secondary,#6b7280)'}}>{it.satuan}</td>
-              <td style={{...cs.td,fontSize:'11px',color:'var(--color-text-secondary,#6b7280)'}}>{it.ords.map(o=>`${o.dapur}: ${o.qty}`).join(' · ')}</td>
-              <td style={cs.td}><select value={asgn[it.nama]?.staf||''} onChange={e=>sa(it.nama,'staf',e.target.value)} style={{fontSize:'12px',padding:'4px'}}>
-                <option value="">— Pilih —</option>{stafBeli.map(s=><option key={s.id} value={s.id}>{s.nama}</option>)}
-              </select></td>
-              <td style={cs.td}><input type="number" defaultValue={it.total} onChange={e=>sa(it.nama,'qty',e.target.value)} style={{width:'65px',textAlign:'right',padding:'4px',fontSize:'12px'}}/></td>
-            </tr>)}</tbody>
-          </table>
+
+      {/* Notifikasi progress jika ada tugas */}
+      {totalTugas > 0 && (
+        <div style={{...cs.card,marginBottom:'1rem',border: belumBeli>0?'1px solid #fde68a':'1px solid #a7f3d0',background:belumBeli>0?'#fffbeb':'#f0fdf4'}}>
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'8px'}}>
+            <div style={{fontSize:'13px',fontWeight:500,color: belumBeli>0?'#92400e':'#065f46'}}>
+              {belumBeli>0 ? `⚠️ ${belumBeli} item belum dibeli` : '✅ Semua item sudah dibeli!'}
+            </div>
+            <div style={{fontSize:'12px',color:'#6b7280'}}>{hargaTerisi}/{totalTugas} harga terisi</div>
+          </div>
+          <div style={{height:'6px',background:'#e5e7eb',borderRadius:'3px',overflow:'hidden'}}>
+            <div style={{height:'100%',background:'#065f46',borderRadius:'3px',width:`${totalTugas>0?(hargaTerisi/totalTugas)*100:0}%`,transition:'width 0.3s'}}/>
+          </div>
         </div>
+      )}
+
+      {/* Tab navigation */}
+      <div style={{display:'flex',gap:'4px',marginBottom:'1rem',borderBottom:'1px solid #e5e7eb',paddingBottom:'0'}}>
+        {[['bagi','Bagi Tugas'],['monitor','Monitor Status']].map(([id,lbl])=>(
+          <button key={id} onClick={()=>setTab(id)}
+            style={{padding:'8px 16px',fontSize:'13px',fontWeight:tab===id?500:400,border:'none',background:'transparent',cursor:'pointer',borderBottom:tab===id?'2px solid #1e40af':'2px solid transparent',color:tab===id?'#1e40af':'#6b7280'}}>
+            {lbl} {id==='monitor'&&belumBeli>0&&<span style={{...badge('war'),fontSize:'10px',marginLeft:'4px',padding:'1px 6px'}}>{belumBeli}</span>}
+          </button>
+        ))}
       </div>
-      <div style={{display:'flex',gap:'8px',marginTop:'1rem'}}>
-        <button onClick={save} disabled={saving} style={{...btn('suc'),opacity:saving?0.6:1}}>{saving?'Menyimpan...':'Simpan Tugas Beli'}</button>
-        <button onClick={wa} style={btn('war')}>Salin Teks WA</button>
-      </div></>}
+
+      {/* TAB 1: BAGI TUGAS */}
+      {tab==='bagi' && (
+        !ri.length ? (
+          <div style={{...cs.met,padding:'2rem',textAlign:'center',color:'#6b7280'}}>Tidak ada order aktif untuk tanggal {sd}</div>
+        ) : (
+          <>
+            <div style={cs.card}>
+              <div style={{fontSize:'14px',fontWeight:500,marginBottom:'12px'}}>Total Kebutuhan — {ri.length} item</div>
+              <div style={{overflowX:'auto'}}>
+                <table style={{width:'100%',borderCollapse:'collapse',fontSize:'13px'}}>
+                  <thead><tr style={{borderBottom:'1px solid #e5e7eb'}}>
+                    {['Bahan','Total','Sat','Rincian per Dapur','Staf','Qty Beli'].map((h,i)=>(
+                      <th key={i} style={{...cs.th,textAlign:i===1||i===2?'right':'left'}}>{h}</th>
+                    ))}
+                  </tr></thead>
+                  <tbody>{ri.map(it=>(
+                    <tr key={it.nama} style={{borderBottom:'1px solid #f9fafb'}}>
+                      <td style={{...cs.td,fontWeight:500}}>{it.nama}</td>
+                      <td style={{...cs.td,textAlign:'right',color:'#1e40af',fontWeight:600}}>{it.total}</td>
+                      <td style={{...cs.td,textAlign:'right',color:'#6b7280'}}>{it.satuan}</td>
+                      <td style={{...cs.td,fontSize:'11px',color:'#6b7280'}}>{it.ords.map(o=>`${o.dapur}: ${o.qty}`).join(' · ')}</td>
+                      <td style={cs.td}>
+                        <select value={asgn[it.nama]?.staf||''} onChange={e=>sa(it.nama,'staf',e.target.value)} style={{fontSize:'12px',padding:'4px'}}>
+                          <option value="">— Pilih —</option>
+                          {stafBeli.map(s=><option key={s.id} value={s.id}>{s.nama}</option>)}
+                        </select>
+                      </td>
+                      <td style={cs.td}>
+                        <input type="number" defaultValue={it.total} onChange={e=>sa(it.nama,'qty',e.target.value)} style={{width:'65px',textAlign:'right',padding:'4px',fontSize:'12px'}}/>
+                      </td>
+                    </tr>
+                  ))}</tbody>
+                </table>
+              </div>
+            </div>
+            <div style={{display:'flex',gap:'8px',marginTop:'1rem'}}>
+              <button onClick={save} disabled={saving} style={{...btn('suc'),opacity:saving?0.6:1}}>{saving?'Menyimpan...':'Simpan Tugas Beli'}</button>
+              <button onClick={wa} style={btn('war')}>Salin Teks WA</button>
+            </div>
+          </>
+        )
+      )}
+
+      {/* TAB 2: MONITOR STATUS */}
+      {tab==='monitor' && (
+        !tugasHariIni.length ? (
+          <div style={{...cs.met,padding:'2rem',textAlign:'center',color:'#6b7280'}}>Belum ada tugas yang dibuat untuk tanggal {sd}.<br/>Buat tugas dulu di tab "Bagi Tugas".</div>
+        ) : (
+          <div style={cs.card}>
+            <div style={{fontSize:'14px',fontWeight:500,marginBottom:'12px'}}>Status Pembelian — {tugasHariIni.length} item</div>
+            <table style={{width:'100%',borderCollapse:'collapse',fontSize:'13px'}}>
+              <thead><tr style={{borderBottom:'1px solid #e5e7eb'}}>
+                {['Staf','Bahan','Qty','Status','Harga Beli'].map((h,i)=>(
+                  <th key={i} style={{...cs.th,textAlign:i>=3?'right':'left'}}>{h}</th>
+                ))}
+              </tr></thead>
+              <tbody>
+                {tugasHariIni.map(t=>(
+                  <tr key={t.id} style={{borderBottom:'1px solid #f9fafb'}}>
+                    <td style={{...cs.td,fontWeight:500}}>{getNama(t.staf_id)}</td>
+                    <td style={cs.td}>{t.nama_bahan}</td>
+                    <td style={{...cs.td,color:'#6b7280'}}>{t.qty} {t.satuan}</td>
+                    <td style={{...cs.td,textAlign:'right'}}>{statusBadgeTugas(t.status)}</td>
+                    <td style={{...cs.td,textAlign:'right',fontWeight:500,color:t.status==='done'?'#065f46':'#9ca3af'}}>
+                      {t.status==='done' ? fRp(t.harga_beli) : '—'}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )
+      )}
     </div>
   );
 }
@@ -490,40 +583,169 @@ function RekapBeli({orders,tugasBeli,onTugasSaved,stafBeli}) {
 // =============================================
 // STAF BELI
 // =============================================
-function TugasBeli({user,tugasBeli,onHargaSaved}) {
-  const [hi,setHi]=useState({});const [saving,setSaving]=useState({});
-  const mt=tugasBeli.filter(t=>String(t.staf_id)===String(user.u));
-  const sv=async(id)=>{
-    const h=parseFloat(hi[id])||0;if(h<=0){alert('Masukkan harga yang valid');return;}
+// Helper: normalize tanggal dari Google Sheets (bisa berupa ISO string atau sudah YYYY-MM-DD)
+function normDate(d) {
+  if (!d) return '';
+  const s = String(d);
+  if (s.includes('T')) return s.slice(0,10);
+  return s;
+}
+
+function TugasBeli({user, tugasBeli, onHargaSaved, onStatusChanged, stafBeli, allUsers}) {
+  const [hi,setHi]         = useState({});
+  const [saving,setSaving] = useState({});
+  const [konfirm,setKonfirm] = useState({});
+  const today = new Date().toISOString().slice(0,10);
+
+  // Ambil tugas hari ini dari semua staf (untuk saling lihat)
+  const semuaTugas = tugasBeli.filter(t => normDate(t.tanggal) === today || normDate(t.tanggal) === normDate(t.tanggal));
+  // Group per staf
+  const stafList = [...new Map(semuaTugas.map(t => [t.staf_id, t])).values()].map(t => t.staf_id);
+
+  const getNama = (stafId) => {
+    const u = allUsers.find(x => x.username === stafId || x.id === stafId);
+    return u ? u.name : stafId;
+  };
+
+  const isOwn = (t) => String(t.staf_id) === String(user.u);
+
+  // Konfirmasi sudah beli
+  const handleBeli = async (t) => {
+    setKonfirm(p=>({...p,[t.id]:true}));
+    try {
+      const res = await api.post({action:'updateTugasStatus', tugasId: t.id, status:'bought'});
+      if (res.success) onStatusChanged(t.id, 'bought');
+      else alert('Gagal: '+(res.error||''));
+    } catch(e) { alert('Koneksi bermasalah'); }
+    setKonfirm(p=>({...p,[t.id]:false}));
+  };
+
+  // Simpan harga beli
+  const handleHarga = async (id) => {
+    const h = parseFloat(hi[id])||0;
+    if (h<=0) { alert('Masukkan harga yang valid'); return; }
     setSaving(p=>({...p,[id]:true}));
-    try{
-      const res=await api.post({action:'updateHargaBeli',tugasId:id,hargaBeli:h});
-      if(res.success)onHargaSaved(id,h);
-      else alert('Gagal menyimpan: '+(res.error||''));
-    }catch(e){alert('Koneksi bermasalah');}
+    try {
+      const res = await api.post({action:'updateHargaBeli', tugasId:id, hargaBeli:h});
+      if (res.success) onHargaSaved(id, h);
+      else alert('Gagal: '+(res.error||''));
+    } catch(e) { alert('Koneksi bermasalah'); }
     setSaving(p=>({...p,[id]:false}));
   };
+
+  const statusIcon = (s) => {
+    if (s==='done')   return <span style={badge('suc')}>Selesai ✓</span>;
+    if (s==='bought') return <span style={badge('war')}>Sudah dibeli</span>;
+    return <span style={badge('inf')}>Belum beli</span>;
+  };
+
+  // Ringkasan progress hari ini
+  const total  = semuaTugas.length;
+  const bought = semuaTugas.filter(t=>t.status==='bought'||t.status==='done').length;
+  const done   = semuaTugas.filter(t=>t.status==='done').length;
+
+  // Tugas milik staf ini
+  const myTugas = semuaTugas.filter(t => isOwn(t));
+  // Tugas staf lain
+  const otherTugas = semuaTugas.filter(t => !isOwn(t));
+
   return (
-    <div style={{padding:'1.5rem',maxWidth:'680px'}}>
+    <div style={{padding:'1.5rem', maxWidth:'720px'}}>
       <h2 style={{marginBottom:'4px'}}>Tugas Beli Hari Ini</h2>
-      <div style={{fontSize:'13px',color:'var(--color-text-secondary,#6b7280)',marginBottom:'1.5rem'}}>Halo {user.name}!</div>
-      {!mt.length?<div style={{...cs.met,padding:'2rem',textAlign:'center',color:'var(--color-text-secondary,#6b7280)'}}>Belum ada tugas beli yang ditugaskan untukmu.</div>:
-      <div style={{display:'flex',flexDirection:'column',gap:'8px'}}>
-        {mt.map(t=><div key={t.id} style={{...cs.card,display:'flex',alignItems:'center',gap:'12px'}}>
-          <div style={{flex:1}}>
-            <div style={{fontWeight:500,marginBottom:'2px'}}>{t.nama_bahan}</div>
-            <div style={{fontSize:'12px',color:'var(--color-text-secondary,#6b7280)'}}>{t.qty} {t.satuan} · Kirim: {t.tanggal}</div>
+      <div style={{fontSize:'13px',color:'#6b7280',marginBottom:'1rem'}}>Halo {user.name}!</div>
+
+      {/* Progress bar semua staf */}
+      {total > 0 && (
+        <div style={{...cs.card, marginBottom:'1rem'}}>
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'8px'}}>
+            <div style={{fontSize:'13px',fontWeight:500}}>Progress Hari Ini</div>
+            <div style={{fontSize:'12px',color:'#6b7280'}}>{done}/{total} selesai</div>
           </div>
-          {t.status==='done'?<div style={{textAlign:'right'}}>
-            <span style={badge('suc')}>Sudah input ✓</span>
-            <div style={{fontSize:'13px',fontWeight:500,marginTop:'4px'}}>{fRp(t.harga_beli)}/{t.satuan}</div>
-          </div>:<div style={{display:'flex',gap:'8px',alignItems:'flex-end'}}>
-            <div><label style={{fontSize:'11px',color:'var(--color-text-secondary,#6b7280)',display:'block',marginBottom:'4px'}}>Harga beli per {t.satuan}:</label>
-              <input type="number" placeholder="contoh: 32000" value={hi[t.id]||''} onChange={e=>setHi(p=>({...p,[t.id]:e.target.value}))}/></div>
-            <button onClick={()=>sv(t.id)} disabled={saving[t.id]} style={{...btn('suc'),opacity:saving[t.id]?0.6:1}}>{saving[t.id]?'...':'Simpan'}</button>
-          </div>}
-        </div>)}
-      </div>}
+          <div style={{height:'8px',background:'#f3f4f6',borderRadius:'4px',overflow:'hidden',marginBottom:'8px'}}>
+            <div style={{height:'100%',background:'#065f46',borderRadius:'4px',width:`${total>0?(done/total)*100:0}%`,transition:'width 0.3s'}}/>
+          </div>
+          <div style={{display:'flex',gap:'12px',fontSize:'11px'}}>
+            <span style={{color:'#6b7280'}}>⬜ Belum: {total-bought}</span>
+            <span style={{color:'#92400e'}}>🟡 Sudah beli: {bought-done}</span>
+            <span style={{color:'#065f46'}}>✅ Harga terisi: {done}</span>
+          </div>
+        </div>
+      )}
+
+      {/* Tugas milik sendiri */}
+      {!myTugas.length ? (
+        <div style={{...cs.met,padding:'2rem',textAlign:'center',color:'#6b7280',marginBottom:'1rem'}}>Belum ada tugas yang ditugaskan untukmu hari ini.</div>
+      ) : (
+        <>
+          <div style={{fontSize:'13px',fontWeight:500,color:'#374151',marginBottom:'8px'}}>Tugasmu ({myTugas.length} item)</div>
+          <div style={{display:'flex',flexDirection:'column',gap:'8px',marginBottom:'1.5rem'}}>
+            {myTugas.map(t=>(
+              <div key={t.id} style={{...cs.card,border: t.status==='done'?'1px solid #a7f3d0': t.status==='bought'?'1px solid #fde68a':'1px solid #e5e7eb'}}>
+                <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:'8px'}}>
+                  <div>
+                    <div style={{fontWeight:500,marginBottom:'2px'}}>{t.nama_bahan}</div>
+                    <div style={{fontSize:'12px',color:'#6b7280'}}>{t.qty} {t.satuan}</div>
+                  </div>
+                  {statusIcon(t.status)}
+                </div>
+                {/* Step 1: Belum beli → tombol konfirmasi */}
+                {t.status==='pending' && (
+                  <button onClick={()=>handleBeli(t)} disabled={konfirm[t.id]}
+                    style={{...btn('pri'),width:'100%',padding:'9px',opacity:konfirm[t.id]?0.6:1}}>
+                    {konfirm[t.id]?'Menyimpan...':'✓ Konfirmasi Sudah Beli di Pasar'}
+                  </button>
+                )}
+                {/* Step 2: Sudah beli → isi harga */}
+                {t.status==='bought' && (
+                  <div style={{display:'flex',gap:'8px',alignItems:'flex-end',marginTop:'4px'}}>
+                    <div style={{flex:1}}>
+                      <label style={{fontSize:'11px',color:'#6b7280',display:'block',marginBottom:'4px'}}>Harga beli per {t.satuan} (Rp):</label>
+                      <input type="number" placeholder="contoh: 32000" value={hi[t.id]||''} onChange={e=>setHi(p=>({...p,[t.id]:e.target.value}))} style={{width:'100%',boxSizing:'border-box'}}/>
+                    </div>
+                    <button onClick={()=>handleHarga(t.id)} disabled={saving[t.id]}
+                      style={{...btn('suc'),padding:'9px 16px',opacity:saving[t.id]?0.6:1}}>
+                      {saving[t.id]?'...':'Simpan'}
+                    </button>
+                  </div>
+                )}
+                {/* Step 3: Done → tampilkan harga */}
+                {t.status==='done' && (
+                  <div style={{fontSize:'13px',color:'#065f46',fontWeight:500,marginTop:'4px'}}>
+                    Harga beli: {fRp(t.harga_beli)} / {t.satuan}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+
+      {/* Tugas staf lain — read only */}
+      {otherTugas.length > 0 && (
+        <>
+          <div style={{fontSize:'13px',fontWeight:500,color:'#374151',marginBottom:'8px'}}>Tugas Staf Lain</div>
+          <div style={{...cs.card}}>
+            <table style={{width:'100%',borderCollapse:'collapse',fontSize:'13px'}}>
+              <thead><tr style={{borderBottom:'1px solid #f3f4f6'}}>
+                {['Staf','Bahan','Qty','Status','Harga Beli'].map((h,i)=>(
+                  <th key={i} style={{...cs.th,textAlign:i>=3?'center':'left'}}>{h}</th>
+                ))}
+              </tr></thead>
+              <tbody>
+                {otherTugas.map(t=>(
+                  <tr key={t.id} style={{borderBottom:'1px solid #f9fafb',opacity:t.status==='pending'?0.7:1}}>
+                    <td style={cs.td}><span style={{fontSize:'12px',fontWeight:500}}>{getNama(t.staf_id)}</span></td>
+                    <td style={cs.td}>{t.nama_bahan}</td>
+                    <td style={{...cs.td,color:'#6b7280'}}>{t.qty} {t.satuan}</td>
+                    <td style={{...cs.td,textAlign:'center'}}>{statusIcon(t.status)}</td>
+                    <td style={{...cs.td,textAlign:'center',color:'#065f46',fontWeight:500}}>{t.status==='done'?fRp(t.harga_beli):'—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
     </div>
   );
 }
@@ -709,10 +931,9 @@ function Laporan({orders}) {
 // =============================================
 // KELOLA AKUN (Admin only)
 // =============================================
-function KelolaAkun({allUsers, onUsersChanged}) {
-  const allowedRoles = ['staf_beli','staf_kirim'];
-  const users = allUsers.filter(u => allowedRoles.includes(u.role));
-  const [loading, setLoading]   = useState(false);
+function KelolaAkun({onUsersChanged}) {
+  const [users, setUsers]       = useState([]);
+  const [loading, setLoading]   = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [saving, setSaving]     = useState(false);
   const [showPassMap, setShowPassMap] = useState({});
@@ -722,9 +943,21 @@ function KelolaAkun({allUsers, onUsersChanged}) {
   const [formErr, setFormErr]   = useState('');
   const [showNewPass, setShowNewPass] = useState(false);
 
+  const allowedRoles = ['staf_beli','staf_kirim'];
   const roleLabel = {staf_beli:'Staf Pembelian', staf_kirim:'Staf Pengiriman'};
   const roleBg    = {staf_beli:'#d1fae5', staf_kirim:'#fef3c7'};
   const roleColor = {staf_beli:'#065f46', staf_kirim:'#92400e'};
+
+  const load = async () => {
+    setLoading(true);
+    try {
+      const res = await api.get('getUsers');
+      if (Array.isArray(res)) setUsers(res.filter(u => allowedRoles.includes(u.role)));
+    } catch(e) {}
+    setLoading(false);
+  };
+
+  useEffect(() => { load(); }, []);
 
   const toggleShowPass = (id) => setShowPassMap(p => ({...p, [id]: !p[id]}));
 
@@ -733,7 +966,7 @@ function KelolaAkun({allUsers, onUsersChanged}) {
     if (!form.username.trim()) return 'Username wajib diisi';
     if (form.username.includes(' ')) return 'Username tidak boleh mengandung spasi';
     if (form.password.length < 4)  return 'Password minimal 4 karakter';
-    if (allUsers.find(u => u.username === form.username)) return 'Username sudah dipakai, pilih yang lain';
+    if (users.find(u => u.username === form.username)) return 'Username sudah dipakai, pilih yang lain';
     return '';
   };
 
@@ -745,7 +978,9 @@ function KelolaAkun({allUsers, onUsersChanged}) {
       const newUser = {id:'u-'+Date.now(), ...form};
       const res = await api.post({action:'addUser', user: newUser});
       if (res.success) {
-        onUsersChanged(p => [...p, newUser]);
+        const updated = [...users, newUser];
+        setUsers(updated);
+        if (onUsersChanged) onUsersChanged(updated);
         setForm({name:'', username:'', password:'', role:'staf_beli'});
         setShowForm(false);
         setShowNewPass(false);
@@ -758,7 +993,12 @@ function KelolaAkun({allUsers, onUsersChanged}) {
     setDeleting(true);
     try {
       const res = await api.post({action:'deleteUser', userId});
-      if (res.success) { onUsersChanged(p => p.filter(u => u.id !== userId)); setDelConfirm(null); }
+      if (res.success) {
+        const updated = users.filter(u => u.id !== userId);
+        setUsers(updated);
+        if (onUsersChanged) onUsersChanged(updated);
+        setDelConfirm(null);
+      }
       else alert('Gagal menghapus: '+(res.error||''));
     } catch(e) { alert('Koneksi bermasalah'); }
     setDeleting(false);
@@ -898,7 +1138,7 @@ function App() {
   const [orders,setOrders] = useState([]);
   const [tugas,setTugas]   = useState([]);
   const [pngrm,setPngrm]   = useState([]);
-  const [allUsers,setAllUsers] = useState([]);
+  const [stafBeli,setStafBeli] = useState([]);
   const [loading,setLoading]= useState(false);
   const [error,setError]   = useState(null);
 
@@ -913,7 +1153,9 @@ function App() {
       ]);
       if (!Array.isArray(o)) throw new Error(o.error || 'getOrders gagal');
       setOrders(o); setTugas(t||[]); setPngrm(p||[]);
-      setAllUsers(Array.isArray(u) ? u : []);
+      if (Array.isArray(u)) {
+        setStafBeli(u.filter(x=>x.role==='staf_beli').map(x=>({id:x.username,nama:x.name})));
+      }
     } catch(e) { setError(e.message); }
     setLoading(false);
   }, []);
@@ -921,7 +1163,7 @@ function App() {
   useEffect(() => { if (user) loadAll(); }, [user, loadAll]);
 
   const login  = u => { setUser(u); setView(navItems(u.role)[0]?.id||'dashboard'); };
-  const logout = () => { setUser(null); setOrders([]); setTugas([]); setPngrm([]); setAllUsers([]); };
+  const logout = () => { setUser(null); setOrders([]); setTugas([]); setPngrm([]); };
   const isAdmin = user?.role === 'admin';
   const handleCancelOrder = (orderId) => {
     setOrders(prev => prev.map(o => o.id === orderId ? {...o, status:'cancelled'} : o));
@@ -929,15 +1171,15 @@ function App() {
 
   if (!user) return <Login onLogin={login}/>;
 
-  const stafBeli = allUsers.filter(u => u.role === 'staf_beli').map(u => ({id: u.username, nama: u.name}));
-
   const rv = () => { switch(view) {
     case 'dashboard':    return <Dashboard orders={orders} pengiriman={pngrm} loading={loading} error={error} onRefresh={loadAll} onCancelOrder={handleCancelOrder} isAdmin={isAdmin}/>;
     case 'input_order':  return <InputOrder onOrderAdded={o=>setOrders(p=>[...p,o])} setView={setView}/>;
-    case 'rekap_beli':   return <RekapBeli orders={orders} tugasBeli={tugas} stafBeli={stafBeli} onTugasSaved={(t,tgl)=>setTugas(p=>[...p.filter(x=>x.tanggal!==tgl),...t])}/>;
+    case 'rekap_beli':   return <RekapBeli orders={orders} tugasBeli={tugas} stafBeli={stafBeli} allUsers={allUsers} onTugasSaved={(t,tgl)=>setTugas(p=>[...p.filter(x=>normDate(x.tanggal)!==tgl),...t])}/>;
     case 'surat_jalan':  return <SuratJalan orders={orders}/>;
     case 'laporan': case 'laporan_dapur': case 'laporan_item': return <Laporan orders={orders}/>;
-    case 'tugas_beli': case 'histori_beli': return <TugasBeli user={user} tugasBeli={tugas} onHargaSaved={(id,h)=>setTugas(p=>p.map(t=>t.id===id?{...t,harga_beli:h,status:'done'}:t))}/>;
+    case 'tugas_beli': case 'histori_beli': return <TugasBeli user={user} tugasBeli={tugas} allUsers={allUsers} stafBeli={stafBeli}
+        onStatusChanged={(id,status)=>setTugas(p=>p.map(t=>t.id===id?{...t,status}:t))}
+        onHargaSaved={(id,h)=>setTugas(p=>p.map(t=>t.id===id?{...t,harga_beli:h,status:'done'}:t))}/>;
     case 'pengiriman':   return <PengirimanView user={user} orders={orders} pengiriman={pngrm} onKonfirmasi={pid=>setPngrm(p=>p.map(x=>x.id===pid?{...x,status:'delivered'}:x))}/>;
     case 'kelola_akun':  return <KelolaAkun allUsers={allUsers} onUsersChanged={setAllUsers}/>;
     default:             return <Dashboard orders={orders} pengiriman={pngrm} loading={loading} error={error} onRefresh={loadAll} onCancelOrder={handleCancelOrder} isAdmin={isAdmin}/>;
