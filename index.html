@@ -935,9 +935,9 @@ function Laporan({orders}) {
 // =============================================
 // KELOLA AKUN (Admin only)
 // =============================================
-function KelolaAkun({onUsersChanged}) {
-  const [users, setUsers]       = useState([]);
-  const [loading, setLoading]   = useState(true);
+function KelolaAkun({allUsers, onUsersChanged}) {
+  const allowedRoles = ['staf_beli','staf_kirim'];
+  const users = (allUsers||[]).filter(u => allowedRoles.includes(u.role));
   const [showForm, setShowForm] = useState(false);
   const [saving, setSaving]     = useState(false);
   const [showPassMap, setShowPassMap] = useState({});
@@ -947,30 +947,16 @@ function KelolaAkun({onUsersChanged}) {
   const [formErr, setFormErr]   = useState('');
   const [showNewPass, setShowNewPass] = useState(false);
 
-  const allowedRoles = ['staf_beli','staf_kirim'];
   const roleLabel = {staf_beli:'Staf Pembelian', staf_kirim:'Staf Pengiriman'};
   const roleBg    = {staf_beli:'#d1fae5', staf_kirim:'#fef3c7'};
   const roleColor = {staf_beli:'#065f46', staf_kirim:'#92400e'};
 
-  const load = async () => {
-    setLoading(true);
-    try {
-      const res = await api.get('getUsers');
-      if (Array.isArray(res)) setUsers(res.filter(u => allowedRoles.includes(u.role)));
-    } catch(e) {}
-    setLoading(false);
-  };
-
-  useEffect(() => { load(); }, []);
-
-  const toggleShowPass = (id) => setShowPassMap(p => ({...p, [id]: !p[id]}));
-
   const validate = () => {
-    if (!form.name.trim())     return 'Nama lengkap wajib diisi';
-    if (!form.username.trim()) return 'Username wajib diisi';
-    if (form.username.includes(' ')) return 'Username tidak boleh mengandung spasi';
-    if (form.password.length < 4)  return 'Password minimal 4 karakter';
-    if (users.find(u => u.username === form.username)) return 'Username sudah dipakai, pilih yang lain';
+    if (!form.name.trim())          return 'Nama lengkap wajib diisi';
+    if (!form.username.trim())      return 'Username wajib diisi';
+    if (form.username.includes(' '))return 'Username tidak boleh ada spasi';
+    if (form.password.length < 4)   return 'Password minimal 4 karakter';
+    if ((allUsers||[]).find(u => u.username === form.username)) return 'Username sudah dipakai';
     return '';
   };
 
@@ -982,12 +968,9 @@ function KelolaAkun({onUsersChanged}) {
       const newUser = {id:'u-'+Date.now(), ...form};
       const res = await api.post({action:'addUser', user: newUser});
       if (res.success) {
-        const updated = [...users, newUser];
-        setUsers(updated);
-        if (onUsersChanged) onUsersChanged(updated);
+        onUsersChanged(prev => [...prev, newUser]);
         setForm({name:'', username:'', password:'', role:'staf_beli'});
-        setShowForm(false);
-        setShowNewPass(false);
+        setShowForm(false); setShowNewPass(false);
       } else setFormErr(res.error || 'Gagal menyimpan');
     } catch(e) { setFormErr('Koneksi bermasalah'); }
     setSaving(false);
@@ -998,12 +981,9 @@ function KelolaAkun({onUsersChanged}) {
     try {
       const res = await api.post({action:'deleteUser', userId});
       if (res.success) {
-        const updated = users.filter(u => u.id !== userId);
-        setUsers(updated);
-        if (onUsersChanged) onUsersChanged(updated);
+        onUsersChanged(prev => prev.filter(u => u.id !== userId));
         setDelConfirm(null);
-      }
-      else alert('Gagal menghapus: '+(res.error||''));
+      } else alert('Gagal menghapus: '+(res.error||''));
     } catch(e) { alert('Koneksi bermasalah'); }
     setDeleting(false);
   };
@@ -1081,54 +1061,52 @@ function KelolaAkun({onUsersChanged}) {
       )}
 
       {/* DAFTAR AKUN */}
-      {loading ? <Spinner/> : (
-        <div style={cs.card}>
-          <div style={{fontSize:'14px',fontWeight:500,marginBottom:'12px'}}>
-            Daftar Akun Staf ({users.length} akun)
-          </div>
-          {!users.length ? (
-            <div style={{padding:'2rem',textAlign:'center',color:'#6b7280',fontSize:'13px'}}>Belum ada akun staf. Buat akun baru di atas.</div>
-          ) : (
-            <table style={{width:'100%',borderCollapse:'collapse'}}>
-              <thead>
-                <tr style={{borderBottom:'0.5px solid #e5e7eb'}}>
-                  {['Nama','Username','Password','Role',''].map((h,i)=>(
-                    <th key={i} style={{...cs.th,textAlign:'left'}}>{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {users.map(u => (
-                  <tr key={u.id} style={{borderBottom:'0.5px solid #f3f4f6'}}>
-                    <td style={{...cs.td,fontWeight:500}}>{u.name}</td>
-                    <td style={{...cs.td,fontFamily:'monospace',fontSize:'12px',color:'#374151'}}>{u.username}</td>
-                    <td style={{...cs.td}}>
-                      <div style={{display:'flex',alignItems:'center',gap:'6px'}}>
-                        <span style={{fontFamily:'monospace',fontSize:'12px',color:'#374151',minWidth:'80px'}}>
-                          {showPassMap[u.id] ? u.password : '••••••'}
-                        </span>
-                        <button onClick={()=>toggleShowPass(u.id)} style={{background:'none',border:'none',cursor:'pointer',color:'#9ca3af',fontSize:'13px',padding:'0 2px',lineHeight:1}}>
-                          {showPassMap[u.id] ? '🙈' : '👁️'}
-                        </button>
-                      </div>
-                    </td>
-                    <td style={cs.td}>
-                      <span style={{...badge(),background:roleBg[u.role]||'#f3f4f6',color:roleColor[u.role]||'#374151'}}>
-                        {roleLabel[u.role]||u.role}
-                      </span>
-                    </td>
-                    <td style={cs.td}>
-                      <button onClick={()=>setDelConfirm(u.id)} style={{...btn('dan'),padding:'4px 10px',fontSize:'11px'}}>
-                        Hapus
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
+      <div style={cs.card}>
+        <div style={{fontSize:'14px',fontWeight:500,marginBottom:'12px'}}>
+          Daftar Akun Staf ({users.length} akun)
         </div>
-      )}
+        {!users.length ? (
+          <div style={{padding:'2rem',textAlign:'center',color:'#6b7280',fontSize:'13px'}}>Belum ada akun staf. Buat akun baru di atas.</div>
+        ) : (
+          <table style={{width:'100%',borderCollapse:'collapse'}}>
+            <thead>
+              <tr style={{borderBottom:'0.5px solid #e5e7eb'}}>
+                {['Nama','Username','Password','Role',''].map((h,i)=>(
+                  <th key={i} style={{...cs.th,textAlign:'left'}}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {users.map(u => (
+                <tr key={u.id} style={{borderBottom:'0.5px solid #f3f4f6'}}>
+                  <td style={{...cs.td,fontWeight:500}}>{u.name}</td>
+                  <td style={{...cs.td,fontFamily:'monospace',fontSize:'12px',color:'#374151'}}>{u.username}</td>
+                  <td style={{...cs.td}}>
+                    <div style={{display:'flex',alignItems:'center',gap:'6px'}}>
+                      <span style={{fontFamily:'monospace',fontSize:'12px',color:'#374151',minWidth:'80px'}}>
+                        {showPassMap[u.id] ? u.password : '••••••'}
+                      </span>
+                      <button onClick={()=>setShowPassMap(p=>({...p,[u.id]:!p[u.id]}))} style={{background:'none',border:'none',cursor:'pointer',color:'#9ca3af',fontSize:'13px',padding:'0 2px',lineHeight:1}}>
+                        {showPassMap[u.id] ? '🙈' : '👁️'}
+                      </button>
+                    </div>
+                  </td>
+                  <td style={cs.td}>
+                    <span style={{...badge(),background:roleBg[u.role]||'#f3f4f6',color:roleColor[u.role]||'#374151'}}>
+                      {roleLabel[u.role]||u.role}
+                    </span>
+                  </td>
+                  <td style={cs.td}>
+                    <button onClick={()=>setDelConfirm(u.id)} style={{...btn('dan'),padding:'4px 10px',fontSize:'11px'}}>
+                      Hapus
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
     </div>
   );
 }
@@ -1137,14 +1115,17 @@ function KelolaAkun({onUsersChanged}) {
 // MAIN APP
 // =============================================
 function App() {
-  const [user,setUser]     = useState(null);
-  const [view,setView]     = useState('dashboard');
-  const [orders,setOrders] = useState([]);
-  const [tugas,setTugas]   = useState([]);
-  const [pngrm,setPngrm]   = useState([]);
-  const [stafBeli,setStafBeli] = useState([]);
-  const [loading,setLoading]= useState(false);
-  const [error,setError]   = useState(null);
+  const [user,setUser]       = useState(null);
+  const [view,setView]       = useState('dashboard');
+  const [orders,setOrders]   = useState([]);
+  const [tugas,setTugas]     = useState([]);
+  const [pngrm,setPngrm]     = useState([]);
+  const [allUsers,setAllUsers] = useState([]);
+  const [loading,setLoading] = useState(false);
+  const [error,setError]     = useState(null);
+
+  // stafBeli dihitung dari allUsers secara otomatis
+  const stafBeli = allUsers.filter(x=>x.role==='staf_beli').map(x=>({id:x.username,nama:x.name}));
 
   const loadAll = useCallback(async () => {
     setLoading(true); setError(null);
@@ -1156,10 +1137,10 @@ function App() {
         api.get('getUsers'),
       ]);
       if (!Array.isArray(o)) throw new Error(o.error || 'getOrders gagal');
-      setOrders(o); setTugas(t||[]); setPngrm(p||[]);
-      if (Array.isArray(u)) {
-        setStafBeli(u.filter(x=>x.role==='staf_beli').map(x=>({id:x.username,nama:x.name})));
-      }
+      setOrders(o);
+      setTugas(t||[]);
+      setPngrm(p||[]);
+      setAllUsers(Array.isArray(u) ? u : []);
     } catch(e) { setError(e.message); }
     setLoading(false);
   }, []);
@@ -1167,7 +1148,7 @@ function App() {
   useEffect(() => { if (user) loadAll(); }, [user, loadAll]);
 
   const login  = u => { setUser(u); setView(navItems(u.role)[0]?.id||'dashboard'); };
-  const logout = () => { setUser(null); setOrders([]); setTugas([]); setPngrm([]); };
+  const logout = () => { setUser(null); setOrders([]); setTugas([]); setPngrm([]); setAllUsers([]); };
   const isAdmin = user?.role === 'admin';
   const handleCancelOrder = (orderId) => {
     setOrders(prev => prev.map(o => o.id === orderId ? {...o, status:'cancelled'} : o));
@@ -1192,7 +1173,7 @@ function App() {
   return (
     <div style={{display:'flex',minHeight:'100vh'}}>
       <Sidebar user={user} view={view} setView={setView} onLogout={logout}/>
-      <main style={{flex:1,overflow:'auto',background:'var(--color-background-tertiary,#f3f4f6)'}}>{rv()}</main>
+      <main style={{flex:1,overflow:'auto',background:'#f3f4f6'}}>{rv()}</main>
     </div>
   );
 }
