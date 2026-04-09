@@ -1,0 +1,702 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Koperasi ISS — Sistem Bahan Dapur</title>
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:system-ui,-apple-system,sans-serif;font-size:14px;background:#f3f4f6;color:#111}
+input,select,textarea{font-family:inherit;font-size:13px;padding:6px 10px;border:1px solid #d1d5db;border-radius:6px;background:#fff;color:#111;outline:none;width:auto}
+input:focus,select:focus,textarea:focus{border-color:#3b82f6;box-shadow:0 0 0 2px rgba(59,130,246,0.15)}
+button{font-family:inherit;cursor:pointer}
+table{border-collapse:collapse}
+h2{font-size:18px;font-weight:500;color:#111}
+::-webkit-scrollbar{width:6px;height:6px}
+::-webkit-scrollbar-track{background:#f1f1f1}
+::-webkit-scrollbar-thumb{background:#d1d5db;border-radius:3px}
+</style>
+</head>
+<body>
+<div id="root"><div style="display:flex;align-items:center;justify-content:center;height:100vh;font-family:system-ui;color:#6b7280">Memuat aplikasi...</div></div>
+<script type="text/babel">
+const {useState, useMemo, useEffect, useCallback} = React;
+
+// =============================================
+// ⚙️ KONFIGURASI — ISI URL APPS SCRIPT KAMU
+// =============================================
+const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzDvERzufLQJNeYreqZMZfEdGjBUxDw3avmYKvLOG8NJTJ5yF3Z67LVriqfyZUl4gOJ6w/exec';
+// Ganti XXXXXXX dengan URL deployment Apps Script kamu
+
+// ---- KONSTANTA ----
+const DAPUR = [
+  {id:'mekarsari', nama:'Mekarsari',   pic:'Bu Sari',       hp:'08111111111',    alamat:'SPPG Mekarsari, Bandung'},
+  {id:'cipeujeuh2',nama:'Cipeujeuh 2', pic:'Pak Hendra',    hp:'08222222222',    alamat:'SPPG Cipeujeuh 2, Bandung'},
+  {id:'sukamukti', nama:'Sukamukti',   pic:'Della Maldini', hp:'0882000476152',  alamat:'SPPG Sukamukti, Majalaya'},
+  {id:'cipaku2',   nama:'Cipaku 2',    pic:'Bu Wati',       hp:'08444444444',    alamat:'SPPG Cipaku 2, Bandung'},
+];
+const STAF_BELI = [{id:'ahmad',nama:'Ahmad'},{id:'budi',nama:'Budi'},{id:'cici',nama:'Cici'}];
+
+// ---- HELPERS ----
+function fRp(n) {
+  if (!n || isNaN(n)) return 'Rp 0';
+  return 'Rp ' + Math.round(n).toLocaleString('id-ID');
+}
+
+function parseRAB(text) {
+  const lines = text.trim().split('\n');
+  const items = [];
+  for (const line of lines) {
+    if (!line.trim()) continue;
+    const p = line.split('\t');
+    if (p.length >= 4) {
+      const nama = p[0].trim();
+      const qty  = parseFloat(p[1].replace(',','.')) || 0;
+      const sat  = p[2].trim();
+      const h    = parseInt(p[3].replace(/[^0-9]/g,'')) || 0;
+      if (nama && qty > 0) items.push({nama, qty, satuan: sat, harga_jual: h, harga_beli: 0});
+    }
+  }
+  return items;
+}
+
+function nextDay(d) {
+  const dt = new Date(d); dt.setDate(dt.getDate() + 1);
+  return dt.toISOString().slice(0,10);
+}
+
+function navItems(role) {
+  if (role==='admin')      return [{id:'dashboard',label:'Dashboard'},{id:'input_order',label:'Input Order'},{id:'rekap_beli',label:'Rekap & Tugas Beli'},{id:'surat_jalan',label:'Surat Jalan'},{id:'laporan',label:'Laporan'}];
+  if (role==='staf_beli')  return [{id:'tugas_beli',label:'Tugas Beli Hari Ini'},{id:'histori_beli',label:'Riwayat'}];
+  if (role==='staf_kirim') return [{id:'pengiriman',label:'Daftar Pengiriman'}];
+  if (role==='ceo'||role==='sekretaris') return [{id:'laporan',label:'Laporan Harian'},{id:'laporan_dapur',label:'Per Dapur'},{id:'laporan_item',label:'Per Item'}];
+  return [];
+}
+
+// ---- API CLIENT ----
+const api = {
+  async get(action, params = {}) {
+    const qs = new URLSearchParams({ action, ...params }).toString();
+    const res = await fetch(`${SCRIPT_URL}?${qs}`);
+    return res.json();
+  },
+  async post(body) {
+    const res = await fetch(SCRIPT_URL, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    });
+    return res.json();
+  }
+};
+
+// ---- STYLES ----
+const cs = {
+  card: {background:'var(--color-background-primary,#fff)',border:'0.5px solid var(--color-border-tertiary,#e5e7eb)',borderRadius:'12px',padding:'1rem 1.25rem'},
+  met:  {background:'var(--color-background-secondary,#f9fafb)',borderRadius:'8px',padding:'1rem'},
+  th:   {padding:'6px 8px',fontWeight:500,color:'var(--color-text-secondary,#6b7280)',fontSize:'12px',textAlign:'left'},
+  td:   {padding:'7px 8px',fontSize:'13px',borderBottom:'0.5px solid var(--color-border-tertiary,#e5e7eb)'},
+};
+const btn = (v='def') => ({
+  padding:'8px 16px',fontSize:'13px',fontWeight:500,borderRadius:'8px',cursor:'pointer',border:'none',
+  ...(v==='suc'?{background:'#d1fae5',color:'#065f46'}:
+     v==='pri'?{background:'#dbeafe',color:'#1e40af'}:
+     v==='war'?{background:'#fef3c7',color:'#92400e'}:
+     v==='dan'?{background:'#fee2e2',color:'#991b1b'}:
+     {background:'transparent',color:'var(--color-text-secondary,#6b7280)',border:'0.5px solid var(--color-border-secondary,#d1d5db)'}),
+});
+const badge = (v='inf') => ({
+  fontSize:'11px',padding:'2px 8px',borderRadius:'6px',fontWeight:500,display:'inline-block',
+  ...(v==='suc'?{background:'#d1fae5',color:'#065f46'}:
+     v==='war'?{background:'#fef3c7',color:'#92400e'}:
+     v==='dan'?{background:'#fee2e2',color:'#991b1b'}:
+     {background:'#dbeafe',color:'#1e40af'}),
+});
+const sbadge = (s) => {
+  if (s==='delivered')    return <span style={badge('suc')}>Terkirim</span>;
+  if (s==='pending_kirim')return <span style={badge('war')}>Siap Kirim</span>;
+  return <span style={badge('inf')}>Draft</span>;
+};
+
+// ---- LOADING SPINNER ----
+function Spinner({text='Memuat...'}) {
+  return (
+    <div style={{display:'flex',alignItems:'center',justifyContent:'center',padding:'3rem',gap:'8px',color:'var(--color-text-secondary,#6b7280)',fontSize:'13px'}}>
+      <div style={{width:'16px',height:'16px',border:'2px solid var(--color-border-tertiary,#e5e7eb)',borderTopColor:'#1e40af',borderRadius:'50%',animation:'spin 0.8s linear infinite'}}/>
+      {text}
+      <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
+    </div>
+  );
+}
+
+// ---- ERROR BOX ----
+function ErrorBox({message, onRetry}) {
+  return (
+    <div style={{padding:'1rem',background:'#fee2e2',borderRadius:'8px',color:'#991b1b',fontSize:'13px',display:'flex',gap:'12px',alignItems:'center',margin:'1rem'}}>
+      <span>Gagal memuat data: {message}</span>
+      {onRetry && <button onClick={onRetry} style={{...btn('dan'),padding:'4px 12px',fontSize:'12px'}}>Coba Lagi</button>}
+    </div>
+  );
+}
+
+// =============================================
+// LOGIN
+// =============================================
+function Login({onLogin}) {
+  const [u,setU]=useState(''); const [p,setP]=useState(''); const [err,setErr]=useState(''); const [loading,setLoading]=useState(false);
+  const handle = async () => {
+    if (!u || !p) { setErr('Isi username dan password'); return; }
+    setLoading(true); setErr('');
+    try {
+      const res = await api.get('login', {username: u, password: p});
+      if (res.success) onLogin(res.user);
+      else setErr(res.message || 'Login gagal');
+    } catch(e) { setErr('Tidak bisa terhubung ke server. Cek koneksi internet.'); }
+    setLoading(false);
+  };
+  return (
+    <div style={{minHeight:'100vh',display:'flex',alignItems:'center',justifyContent:'center',background:'var(--color-background-tertiary,#f3f4f6)'}}>
+      <div style={{...cs.card,width:'100%',maxWidth:'360px',padding:'2rem'}}>
+        <div style={{textAlign:'center',marginBottom:'2rem'}}>
+          <div style={{width:'52px',height:'52px',borderRadius:'50%',background:'#d1fae5',color:'#065f46',display:'flex',alignItems:'center',justifyContent:'center',margin:'0 auto 12px',fontSize:'22px',fontWeight:700}}>K</div>
+          <div style={{fontSize:'11px',color:'var(--color-text-secondary,#6b7280)',marginBottom:'4px'}}>KOPERASI INSAN SINERGI SEJAHTERA</div>
+          <div style={{fontSize:'17px',fontWeight:500}}>Sistem Manajemen Bahan</div>
+        </div>
+        <div style={{marginBottom:'12px'}}>
+          <label style={{fontSize:'12px',color:'var(--color-text-secondary,#6b7280)',display:'block',marginBottom:'4px'}}>Username</label>
+          <input value={u} onChange={e=>setU(e.target.value)} placeholder="Masukkan username" style={{width:'100%',boxSizing:'border-box'}}/>
+        </div>
+        <div style={{marginBottom:'16px'}}>
+          <label style={{fontSize:'12px',color:'var(--color-text-secondary,#6b7280)',display:'block',marginBottom:'4px'}}>Password</label>
+          <input type="password" value={p} onChange={e=>setP(e.target.value)} onKeyDown={e=>e.key==='Enter'&&handle()} placeholder="Masukkan password" style={{width:'100%',boxSizing:'border-box'}}/>
+        </div>
+        {err && <div style={{fontSize:'12px',color:'#991b1b',marginBottom:'12px',padding:'8px',background:'#fee2e2',borderRadius:'6px'}}>{err}</div>}
+        <button onClick={handle} disabled={loading} style={{...btn('suc'),width:'100%',padding:'10px',fontSize:'14px',opacity:loading?0.6:1}}>
+          {loading ? 'Masuk...' : 'Masuk'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// =============================================
+// SIDEBAR
+// =============================================
+function Sidebar({user,view,setView,onLogout}) {
+  const items = navItems(user.role);
+  const rl = {admin:'Admin',staf_beli:'Staf Pembelian',staf_kirim:'Staf Pengiriman',ceo:'CEO',sekretaris:'Sekretaris'}[user.role]||user.role;
+  return (
+    <div style={{width:'200px',flexShrink:0,background:'var(--color-background-primary,#fff)',borderRight:'0.5px solid var(--color-border-tertiary,#e5e7eb)',display:'flex',flexDirection:'column',minHeight:'100vh'}}>
+      <div style={{padding:'1rem',borderBottom:'0.5px solid var(--color-border-tertiary,#e5e7eb)',display:'flex',alignItems:'center',gap:'8px'}}>
+        <div style={{width:'30px',height:'30px',borderRadius:'50%',background:'#d1fae5',color:'#065f46',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'13px',fontWeight:700,flexShrink:0}}>K</div>
+        <div><div style={{fontSize:'10px',color:'var(--color-text-tertiary,#9ca3af)'}}>Koperasi ISS</div><div style={{fontSize:'12px',fontWeight:500}}>Bahan Dapur</div></div>
+      </div>
+      <div style={{padding:'0.75rem 1rem',borderBottom:'0.5px solid var(--color-border-tertiary,#e5e7eb)'}}>
+        <div style={{fontSize:'13px',fontWeight:500}}>{user.name}</div>
+        <div style={{fontSize:'11px',color:'var(--color-text-tertiary,#9ca3af)'}}>{rl}</div>
+      </div>
+      <nav style={{flex:1,padding:'0.5rem'}}>
+        {items.map(it=>(
+          <button key={it.id} onClick={()=>setView(it.id)} style={{display:'block',width:'100%',textAlign:'left',padding:'8px 10px',fontSize:'13px',background:view===it.id?'var(--color-background-secondary,#f9fafb)':'transparent',color:view===it.id?'var(--color-text-primary,#111)':'var(--color-text-secondary,#6b7280)',border:'none',borderRadius:'8px',cursor:'pointer',marginBottom:'1px',fontWeight:view===it.id?500:400}}>
+            {it.label}
+          </button>
+        ))}
+      </nav>
+      <div style={{padding:'0.5rem'}}>
+        <button onClick={onLogout} style={{display:'block',width:'100%',textAlign:'left',padding:'8px 10px',fontSize:'13px',color:'#991b1b',background:'transparent',border:'none',cursor:'pointer',borderRadius:'8px'}}>Keluar</button>
+      </div>
+    </div>
+  );
+}
+
+// =============================================
+// DASHBOARD
+// =============================================
+function Dashboard({orders,pengiriman,loading,error,onRefresh}) {
+  const tj = orders.reduce((s,o)=>s+o.items.reduce((ss,i)=>ss+i.qty*i.harga_jual,0),0);
+  const tb = orders.reduce((s,o)=>s+o.items.reduce((ss,i)=>ss+i.qty*i.harga_beli,0),0);
+  const pf = tj - tb;
+  return (
+    <div style={{padding:'1.5rem'}}>
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'1.5rem'}}>
+        <h2 style={{margin:0}}>Dashboard</h2>
+        <button onClick={onRefresh} style={{...btn(),padding:'6px 14px',fontSize:'12px'}}>↻ Refresh</button>
+      </div>
+      {error && <ErrorBox message={error} onRetry={onRefresh}/>}
+      {loading ? <Spinner/> : <>
+        <div style={{display:'grid',gridTemplateColumns:'repeat(4,minmax(0,1fr))',gap:'10px',marginBottom:'1.5rem'}}>
+          {[{l:'Total Order',v:orders.length+' order'},{l:'Total Penjualan',v:fRp(tj)},{l:'Total Pembelian',v:fRp(tb)},{l:'Profit',v:fRp(pf)}].map(c=>(
+            <div key={c.l} style={cs.met}><div style={{fontSize:'11px',color:'var(--color-text-secondary,#6b7280)',marginBottom:'4px'}}>{c.l}</div><div style={{fontSize:'16px',fontWeight:500}}>{c.v}</div></div>
+          ))}
+        </div>
+        <div style={cs.card}>
+          <div style={{fontSize:'14px',fontWeight:500,marginBottom:'12px'}}>Semua Order</div>
+          <div style={{overflowX:'auto'}}>
+            <table style={{width:'100%',borderCollapse:'collapse'}}>
+              <thead><tr style={{borderBottom:'0.5px solid var(--color-border-tertiary,#e5e7eb)'}}>
+                {['Dapur','Tgl Order','Tgl Kirim','Item','Nilai Jual','Status'].map((h,i)=><th key={i} style={{...cs.th,textAlign:i===4?'right':'left'}}>{h}</th>)}
+              </tr></thead>
+              <tbody>
+                {orders.map(o=>{const d=DAPUR.find(x=>x.id===o.dapur_id);const n=o.items.reduce((s,i)=>s+i.qty*i.harga_jual,0);return(
+                  <tr key={o.id}><td style={cs.td}>{d?.nama}</td><td style={{...cs.td,color:'var(--color-text-secondary,#6b7280)'}}>{o.tanggal_order}</td><td style={{...cs.td,color:'var(--color-text-secondary,#6b7280)'}}>{o.tanggal_kirim}</td><td style={{...cs.td,color:'var(--color-text-secondary,#6b7280)'}}>{o.items.length} item</td><td style={{...cs.td,textAlign:'right'}}>{fRp(n)}</td><td style={cs.td}>{sbadge(o.status)}</td></tr>
+                );})}
+                {!orders.length && <tr><td colSpan={6} style={{...cs.td,textAlign:'center',color:'var(--color-text-secondary,#6b7280)'}}>Belum ada order</td></tr>}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </>}
+    </div>
+  );
+}
+
+// =============================================
+// INPUT ORDER
+// =============================================
+function InputOrder({onOrderAdded,setView}) {
+  const [step,setStep]=useState(1); const [sel,setSel]=useState(''); const [rab,setRab]=useState(''); const [items,setItems]=useState([]);
+  const [tO,setTO]=useState(new Date().toISOString().slice(0,10)); const [tK,setTK]=useState(nextDay(new Date().toISOString().slice(0,10)));
+  const [err,setErr]=useState(''); const [saving,setSaving]=useState(false);
+  const parse=()=>{const it=parseRAB(rab);if(!it.length){setErr('Format tidak dikenali. Pastikan copy langsung dari spreadsheet (kolom tab-separated).');return;}setErr('');setItems(it);setStep(3);};
+  const upd=(idx,f,v)=>setItems(p=>p.map((it,i)=>i===idx?{...it,[f]:f==='qty'?parseFloat(v)||0:parseInt(v)||0}:it));
+  const rem=idx=>setItems(p=>p.filter((_,i)=>i!==idx));
+  const sub=async()=>{
+    setSaving(true);
+    const order={id:'ord-'+Date.now(),dapur_id:sel,tanggal_order:tO,tanggal_kirim:tK,status:'draft',items};
+    try {
+      const res = await api.post({action:'addOrder',order});
+      if (res.success) { onOrderAdded(order); alert('Order berhasil disimpan!'); setView('dashboard'); }
+      else alert('Gagal menyimpan: '+(res.error||'Error'));
+    } catch(e) { alert('Koneksi bermasalah: '+e.message); }
+    setSaving(false);
+  };
+  const tj=items.reduce((s,i)=>s+i.qty*i.harga_jual,0);
+  const stps=['Pilih Dapur','Paste RAB','Review & Submit'];
+  return (
+    <div style={{padding:'1.5rem',maxWidth:'820px'}}>
+      <h2 style={{marginBottom:'1rem'}}>Input Order Baru</h2>
+      <div style={{display:'flex',alignItems:'center',gap:'8px',marginBottom:'1.5rem'}}>
+        {stps.map((s,i)=><div key={i} style={{display:'flex',alignItems:'center',gap:'6px'}}>
+          <div style={{width:'22px',height:'22px',borderRadius:'50%',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'11px',fontWeight:600,background:step>i+1?'#d1fae5':step===i+1?'#dbeafe':'var(--color-background-secondary,#f9fafb)',color:step>i+1?'#065f46':step===i+1?'#1e40af':'var(--color-text-tertiary,#9ca3af)'}}>{step>i+1?'✓':i+1}</div>
+          <span style={{fontSize:'12px',color:step===i+1?'var(--color-text-primary,#111)':'var(--color-text-tertiary,#9ca3af)'}}>{s}</span>
+          {i<2&&<span style={{color:'var(--color-text-tertiary,#9ca3af)'}}>›</span>}
+        </div>)}
+      </div>
+      <div style={cs.card}>
+        {step===1&&<div>
+          <div style={{display:'flex',gap:'16px',marginBottom:'1rem'}}>
+            <div><label style={{fontSize:'12px',color:'var(--color-text-secondary,#6b7280)',display:'block',marginBottom:'4px'}}>Tanggal Order</label><input type="date" value={tO} onChange={e=>{setTO(e.target.value);setTK(nextDay(e.target.value));}}/></div>
+            <div><label style={{fontSize:'12px',color:'var(--color-text-secondary,#6b7280)',display:'block',marginBottom:'4px'}}>Tanggal Kirim</label><input type="date" value={tK} onChange={e=>setTK(e.target.value)}/></div>
+          </div>
+          <div style={{fontSize:'12px',color:'var(--color-text-secondary,#6b7280)',marginBottom:'8px'}}>Pilih Dapur</div>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'8px',marginBottom:'1.25rem'}}>
+            {DAPUR.map(d=><button key={d.id} onClick={()=>setSel(d.id)} style={{padding:'12px',textAlign:'left',background:sel===d.id?'#dbeafe':'var(--color-background-secondary,#f9fafb)',border:sel===d.id?'1.5px solid #93c5fd':'0.5px solid var(--color-border-tertiary,#e5e7eb)',borderRadius:'8px',cursor:'pointer'}}>
+              <div style={{fontSize:'14px',fontWeight:500,color:sel===d.id?'#1e40af':'var(--color-text-primary,#111)'}}>{d.nama}</div>
+              <div style={{fontSize:'12px',color:'var(--color-text-secondary,#6b7280)',marginTop:'2px'}}>{d.pic}</div>
+            </button>)}
+          </div>
+          <button disabled={!sel} onClick={()=>setStep(2)} style={{...btn('pri'),opacity:sel?1:0.4,cursor:sel?'pointer':'not-allowed'}}>Lanjut →</button>
+        </div>}
+        {step===2&&<div>
+          <div style={{fontSize:'13px',marginBottom:'12px'}}>Dapur: <strong>{DAPUR.find(d=>d.id===sel)?.nama}</strong></div>
+          <div style={{fontSize:'11px',padding:'8px',background:'var(--color-background-secondary,#f9fafb)',borderRadius:'6px',marginBottom:'8px',color:'var(--color-text-secondary,#6b7280)',fontFamily:'monospace'}}>Format: Bahan [Tab] Banyak [Tab] Satuan [Tab] Harga — copy langsung dari spreadsheet RAB</div>
+          <textarea value={rab} onChange={e=>setRab(e.target.value)} placeholder={"Beras Premium\t100.8\tKg\tRp15,000\nAyam Broiler\t200\tKg\tRp35,000"} style={{width:'100%',minHeight:'200px',fontFamily:'monospace',fontSize:'12px',resize:'vertical',boxSizing:'border-box'}}/>
+          {err&&<div style={{color:'#991b1b',fontSize:'12px',marginTop:'6px',padding:'8px',background:'#fee2e2',borderRadius:'6px'}}>{err}</div>}
+          <div style={{display:'flex',gap:'8px',marginTop:'12px'}}>
+            <button onClick={()=>setStep(1)} style={btn()}>← Kembali</button>
+            <button disabled={!rab.trim()} onClick={parse} style={{...btn('pri'),opacity:rab.trim()?1:0.4}}>Parse & Review →</button>
+          </div>
+        </div>}
+        {step===3&&<div>
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'12px'}}>
+            <div style={{fontSize:'13px'}}>Dapur: <strong>{DAPUR.find(d=>d.id===sel)?.nama}</strong> · Kirim: <strong>{tK}</strong></div>
+            <div style={{fontSize:'12px',color:'var(--color-text-secondary,#6b7280)'}}>{items.length} item</div>
+          </div>
+          <div style={{overflowX:'auto'}}>
+            <table style={{width:'100%',borderCollapse:'collapse',fontSize:'13px'}}>
+              <thead><tr style={{borderBottom:'0.5px solid var(--color-border-tertiary,#e5e7eb)'}}>{['Bahan','Qty','Sat','Harga Jual/Sat','Subtotal',''].map((h,i)=><th key={i} style={{...cs.th,textAlign:i>=3&&i<5?'right':'left'}}>{h}</th>)}</tr></thead>
+              <tbody>{items.map((it,idx)=><tr key={idx} style={{borderBottom:'0.5px solid var(--color-border-tertiary,#e5e7eb)'}}>
+                <td style={{padding:'6px 4px'}}>{it.nama}</td>
+                <td style={{padding:'6px 4px'}}><input type="number" value={it.qty} onChange={e=>upd(idx,'qty',e.target.value)} style={{width:'65px',textAlign:'right',padding:'4px',fontSize:'12px'}}/></td>
+                <td style={{padding:'6px 4px',color:'var(--color-text-secondary,#6b7280)',fontSize:'12px'}}>{it.satuan}</td>
+                <td style={{padding:'6px 4px',textAlign:'right'}}><input type="number" value={it.harga_jual} onChange={e=>upd(idx,'harga_jual',e.target.value)} style={{width:'100px',textAlign:'right',padding:'4px',fontSize:'12px'}}/></td>
+                <td style={{padding:'6px 4px',textAlign:'right',fontWeight:500}}>{fRp(it.qty*it.harga_jual)}</td>
+                <td style={{padding:'6px 4px'}}><button onClick={()=>rem(idx)} style={{fontSize:'14px',color:'#991b1b',background:'none',border:'none',cursor:'pointer',padding:'0 4px'}}>×</button></td>
+              </tr>)}</tbody>
+              <tfoot><tr style={{borderTop:'0.5px solid var(--color-border-secondary,#d1d5db)'}}>
+                <td colSpan={4} style={{padding:'8px 4px',textAlign:'right',fontWeight:500}}>Total Penjualan:</td>
+                <td style={{padding:'8px 4px',textAlign:'right',fontWeight:600,fontSize:'14px'}}>{fRp(tj)}</td>
+                <td></td>
+              </tr></tfoot>
+            </table>
+          </div>
+          <div style={{display:'flex',gap:'8px',marginTop:'1rem'}}>
+            <button onClick={()=>setStep(2)} style={btn()}>← Kembali</button>
+            <button onClick={sub} disabled={saving} style={{...btn('suc'),opacity:saving?0.6:1}}>{saving?'Menyimpan...':'Simpan Order ✓'}</button>
+          </div>
+        </div>}
+      </div>
+    </div>
+  );
+}
+
+// =============================================
+// REKAP & TUGAS BELI
+// =============================================
+function RekapBeli({orders,tugasBeli,onTugasSaved}) {
+  const [sd,setSd]=useState(nextDay(new Date().toISOString().slice(0,10)));
+  const [asgn,setAsgn]=useState({});
+  const [saving,setSaving]=useState(false);
+
+  const ri = useMemo(()=>{
+    const ro = orders.filter(o=>(o.status==='draft'||o.status==='pending_kirim')&&o.tanggal_kirim===sd);
+    const m={};
+    for(const o of ro) for(const it of o.items) {
+      const k=it.nama+'|'+it.satuan;
+      if(!m[k]) m[k]={nama:it.nama,satuan:it.satuan,total:0,ords:[]};
+      m[k].total+=it.qty; m[k].ords.push({dapur:DAPUR.find(d=>d.id===o.dapur_id)?.nama,qty:it.qty});
+    }
+    return Object.values(m).sort((a,b)=>a.nama.localeCompare(b.nama));
+  },[orders,sd]);
+
+  const sa=(nm,f,v)=>setAsgn(p=>({...p,[nm]:{...(p[nm]||{}),[f]:v}}));
+
+  const save=async()=>{
+    const tugas=ri.filter(it=>asgn[it.nama]?.staf).map(it=>({
+      id:'tgs-'+Date.now()+'-'+it.nama.replace(/\s/g,''),tanggal:sd,
+      staf_id:asgn[it.nama].staf,nama_bahan:it.nama,
+      qty:parseFloat(asgn[it.nama].qty)||it.total,satuan:it.satuan,harga_beli:0,status:'pending'
+    }));
+    if(!tugas.length){alert('Pilih staf untuk minimal satu item terlebih dahulu');return;}
+    setSaving(true);
+    try {
+      const res = await api.post({action:'saveTugasBeli',tugas,tanggal:sd});
+      if(res.success){onTugasSaved(tugas,sd);alert('Tugas tersimpan! '+tugas.length+' tugas dibagikan.');}
+      else alert('Gagal: '+(res.error||'Error'));
+    } catch(e){alert('Koneksi bermasalah');}
+    setSaving(false);
+  };
+
+  const wa=()=>{
+    const ls=['*Tugas Beli Bahan - '+sd+'*',''];const bs={};
+    for(const it of ri){const a=asgn[it.nama];if(a?.staf){const sn=STAF_BELI.find(s=>s.id===a.staf)?.nama||a.staf;if(!bs[sn])bs[sn]=[];bs[sn].push(`• ${it.nama}: ${parseFloat(a.qty)||it.total} ${it.satuan}`);}}
+    for(const[sn,its]of Object.entries(bs)){ls.push(`*${sn}:*`);its.forEach(x=>ls.push(x));ls.push('');}
+    if(navigator.clipboard) navigator.clipboard.writeText(ls.join('\n')).then(()=>alert('Teks WA disalin ke clipboard!'));
+    else alert(ls.join('\n'));
+  };
+
+  return (
+    <div style={{padding:'1.5rem',maxWidth:'960px'}}>
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'1.5rem'}}>
+        <h2 style={{margin:0}}>Rekap & Tugas Beli</h2>
+        <div style={{display:'flex',gap:'8px',alignItems:'center'}}>
+          <label style={{fontSize:'12px',color:'var(--color-text-secondary,#6b7280)'}}>Tgl Kirim:</label>
+          <input type="date" value={sd} onChange={e=>setSd(e.target.value)}/>
+        </div>
+      </div>
+      {!ri.length?<div style={{...cs.met,padding:'2rem',textAlign:'center',color:'var(--color-text-secondary,#6b7280)'}}>Tidak ada order aktif untuk tanggal {sd}</div>:
+      <><div style={cs.card}>
+        <div style={{fontSize:'14px',fontWeight:500,marginBottom:'12px'}}>Total Kebutuhan — {ri.length} item</div>
+        <div style={{overflowX:'auto'}}>
+          <table style={{width:'100%',borderCollapse:'collapse',fontSize:'13px'}}>
+            <thead><tr style={{borderBottom:'0.5px solid var(--color-border-tertiary,#e5e7eb)'}}>
+              {['Bahan','Total','Sat','Rincian per Dapur','Staf','Qty Beli'].map((h,i)=><th key={i} style={{...cs.th,textAlign:i===1||i===2?'right':'left'}}>{h}</th>)}
+            </tr></thead>
+            <tbody>{ri.map(it=><tr key={it.nama} style={{borderBottom:'0.5px solid var(--color-border-tertiary,#e5e7eb)'}}>
+              <td style={{...cs.td,fontWeight:500}}>{it.nama}</td>
+              <td style={{...cs.td,textAlign:'right',color:'#1e40af',fontWeight:600}}>{it.total}</td>
+              <td style={{...cs.td,textAlign:'right',color:'var(--color-text-secondary,#6b7280)'}}>{it.satuan}</td>
+              <td style={{...cs.td,fontSize:'11px',color:'var(--color-text-secondary,#6b7280)'}}>{it.ords.map(o=>`${o.dapur}: ${o.qty}`).join(' · ')}</td>
+              <td style={cs.td}><select value={asgn[it.nama]?.staf||''} onChange={e=>sa(it.nama,'staf',e.target.value)} style={{fontSize:'12px',padding:'4px'}}>
+                <option value="">— Pilih —</option>{STAF_BELI.map(s=><option key={s.id} value={s.id}>{s.nama}</option>)}
+              </select></td>
+              <td style={cs.td}><input type="number" defaultValue={it.total} onChange={e=>sa(it.nama,'qty',e.target.value)} style={{width:'65px',textAlign:'right',padding:'4px',fontSize:'12px'}}/></td>
+            </tr>)}</tbody>
+          </table>
+        </div>
+      </div>
+      <div style={{display:'flex',gap:'8px',marginTop:'1rem'}}>
+        <button onClick={save} disabled={saving} style={{...btn('suc'),opacity:saving?0.6:1}}>{saving?'Menyimpan...':'Simpan Tugas Beli'}</button>
+        <button onClick={wa} style={btn('war')}>Salin Teks WA</button>
+      </div></>}
+    </div>
+  );
+}
+
+// =============================================
+// STAF BELI
+// =============================================
+function TugasBeli({user,tugasBeli,onHargaSaved}) {
+  const [hi,setHi]=useState({});const [saving,setSaving]=useState({});
+  const mt=tugasBeli.filter(t=>String(t.staf_id)===String(user.u));
+  const sv=async(id)=>{
+    const h=parseFloat(hi[id])||0;if(h<=0){alert('Masukkan harga yang valid');return;}
+    setSaving(p=>({...p,[id]:true}));
+    try{
+      const res=await api.post({action:'updateHargaBeli',tugasId:id,hargaBeli:h});
+      if(res.success)onHargaSaved(id,h);
+      else alert('Gagal menyimpan: '+(res.error||''));
+    }catch(e){alert('Koneksi bermasalah');}
+    setSaving(p=>({...p,[id]:false}));
+  };
+  return (
+    <div style={{padding:'1.5rem',maxWidth:'680px'}}>
+      <h2 style={{marginBottom:'4px'}}>Tugas Beli Hari Ini</h2>
+      <div style={{fontSize:'13px',color:'var(--color-text-secondary,#6b7280)',marginBottom:'1.5rem'}}>Halo {user.name}!</div>
+      {!mt.length?<div style={{...cs.met,padding:'2rem',textAlign:'center',color:'var(--color-text-secondary,#6b7280)'}}>Belum ada tugas beli yang ditugaskan untukmu.</div>:
+      <div style={{display:'flex',flexDirection:'column',gap:'8px'}}>
+        {mt.map(t=><div key={t.id} style={{...cs.card,display:'flex',alignItems:'center',gap:'12px'}}>
+          <div style={{flex:1}}>
+            <div style={{fontWeight:500,marginBottom:'2px'}}>{t.nama_bahan}</div>
+            <div style={{fontSize:'12px',color:'var(--color-text-secondary,#6b7280)'}}>{t.qty} {t.satuan} · Kirim: {t.tanggal}</div>
+          </div>
+          {t.status==='done'?<div style={{textAlign:'right'}}>
+            <span style={badge('suc')}>Sudah input ✓</span>
+            <div style={{fontSize:'13px',fontWeight:500,marginTop:'4px'}}>{fRp(t.harga_beli)}/{t.satuan}</div>
+          </div>:<div style={{display:'flex',gap:'8px',alignItems:'flex-end'}}>
+            <div><label style={{fontSize:'11px',color:'var(--color-text-secondary,#6b7280)',display:'block',marginBottom:'4px'}}>Harga beli per {t.satuan}:</label>
+              <input type="number" placeholder="contoh: 32000" value={hi[t.id]||''} onChange={e=>setHi(p=>({...p,[t.id]:e.target.value}))}/></div>
+            <button onClick={()=>sv(t.id)} disabled={saving[t.id]} style={{...btn('suc'),opacity:saving[t.id]?0.6:1}}>{saving[t.id]?'...':'Simpan'}</button>
+          </div>}
+        </div>)}
+      </div>}
+    </div>
+  );
+}
+
+// =============================================
+// STAF KIRIM
+// =============================================
+function PengirimanView({user,orders,pengiriman,onKonfirmasi}) {
+  const [sel,setSel]=useState(null);const [foto,setFoto]=useState(null);const [notes,setNotes]=useState('');const [saving,setSaving]=useState(false);
+  const konfirm=async(pid)=>{
+    if(!foto){alert('Upload foto bukti pengiriman terlebih dahulu');return;}
+    setSaving(true);
+    try{
+      const res=await api.post({action:'updatePengiriman',pengirimanId:pid,status:'delivered',catatan:notes});
+      if(res.success){onKonfirmasi(pid);setSel(null);setFoto(null);setNotes('');alert('Pengiriman dikonfirmasi!');}
+      else alert('Gagal: '+(res.error||''));
+    }catch(e){alert('Koneksi bermasalah');}
+    setSaving(false);
+  };
+  return (
+    <div style={{padding:'1.5rem',maxWidth:'680px'}}>
+      <h2 style={{marginBottom:'4px'}}>Daftar Pengiriman</h2>
+      <div style={{fontSize:'13px',color:'var(--color-text-secondary,#6b7280)',marginBottom:'1.5rem'}}>Halo {user.name}!</div>
+      {sel?<div style={cs.card}>
+        <div style={{fontWeight:500,fontSize:'15px',marginBottom:'1rem'}}>Konfirmasi: {DAPUR.find(d=>d.id===sel.dapur_id)?.nama}</div>
+        <div style={{marginBottom:'12px'}}>
+          <div style={{fontSize:'12px',color:'var(--color-text-secondary,#6b7280)',marginBottom:'6px'}}>Foto bukti pengiriman <span style={{color:'#991b1b'}}>*</span></div>
+          <input type="file" accept="image/*" capture="environment" onChange={e=>setFoto(e.target.files[0]?.name||'foto.jpg')} style={{fontSize:'13px'}}/>
+          {foto&&<div style={{fontSize:'12px',color:'#065f46',marginTop:'4px'}}>✓ {foto}</div>}
+        </div>
+        <div style={{marginBottom:'1rem'}}>
+          <div style={{fontSize:'12px',color:'var(--color-text-secondary,#6b7280)',marginBottom:'6px'}}>Catatan (opsional)</div>
+          <textarea value={notes} onChange={e=>setNotes(e.target.value)} placeholder="Catatan kondisi barang, dll..." style={{width:'100%',minHeight:'72px',resize:'vertical',boxSizing:'border-box'}}/>
+        </div>
+        <div style={{display:'flex',gap:'8px'}}>
+          <button onClick={()=>setSel(null)} style={btn()}>Batal</button>
+          <button onClick={()=>konfirm(sel.id)} disabled={!foto||saving} style={{...btn('suc'),opacity:foto&&!saving?1:0.4,cursor:foto&&!saving?'pointer':'not-allowed'}}>{saving?'Menyimpan...':'Konfirmasi Terkirim ✓'}</button>
+        </div>
+      </div>:
+      <div style={{display:'flex',flexDirection:'column',gap:'8px'}}>
+        {pengiriman.map(p=>{const o=orders.find(x=>x.id===p.order_id);const d=DAPUR.find(x=>x.id===p.dapur_id);return(
+          <div key={p.id} style={{...cs.card,display:'flex',alignItems:'center',gap:'12px'}}>
+            <div style={{flex:1}}>
+              <div style={{fontWeight:500,marginBottom:'2px'}}>{d?.nama}</div>
+              <div style={{fontSize:'12px',color:'var(--color-text-secondary,#6b7280)'}}>{d?.alamat}</div>
+              <div style={{fontSize:'11px',color:'var(--color-text-tertiary,#9ca3af)',marginTop:'2px'}}>{o?.items?.length||0} item · {p.tanggal}</div>
+            </div>
+            {p.status==='delivered'?<span style={badge('suc')}>Terkirim ✓</span>:<button onClick={()=>setSel(p)} style={btn('war')}>Konfirmasi</button>}
+          </div>);})}
+        {!pengiriman.length&&<div style={{...cs.met,padding:'2rem',textAlign:'center',color:'var(--color-text-secondary,#6b7280)'}}>Tidak ada pengiriman hari ini</div>}
+      </div>}
+    </div>
+  );
+}
+
+// =============================================
+// SURAT JALAN
+// =============================================
+function SuratJalan({orders}) {
+  const [sel,setSel]=useState(null);const [prnt,setPrnt]=useState(false);
+  if(prnt&&sel){
+    const o=orders.find(x=>x.id===sel);const d=DAPUR.find(x=>x.id===o?.dapur_id);
+    return(<div style={{padding:'1.5rem',maxWidth:'800px'}}>
+      <div style={{display:'flex',gap:'8px',marginBottom:'1.5rem'}}>
+        <button onClick={()=>setPrnt(false)} style={btn()}>← Kembali</button>
+        <button onClick={()=>window.print()} style={btn('pri')}>Cetak / Save PDF</button>
+      </div>
+      <div style={{background:'white',color:'#1a1a1a',border:'1px solid #ddd',borderRadius:'8px',padding:'2rem',fontFamily:'Arial,sans-serif',fontSize:'13px',lineHeight:'1.6'}}>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',borderBottom:'2px solid #1a1a1a',paddingBottom:'12px',marginBottom:'16px'}}>
+          <div style={{display:'flex',alignItems:'center',gap:'12px'}}>
+            <div style={{width:'54px',height:'54px',borderRadius:'50%',border:'2px solid #333',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'7px',fontWeight:'bold',textAlign:'center',lineHeight:'1.3'}}>KOPERASI<br/>INDONESIA</div>
+            <div>
+              <div style={{fontWeight:'bold',fontSize:'15px'}}>KOPERASI KONSUMEN INSAN SINERGI SEJAHTERA</div>
+              <div style={{fontSize:'11px',color:'#555'}}>Nomor AHU-0000368.AH.01.29 Tahun 2025</div>
+              <div style={{fontSize:'11px',color:'#555'}}>Kp. Tenjonagara 02/02, Mekarjaya, Pacet, Kab. Bandung</div>
+            </div>
+          </div>
+          <div style={{width:'50px',height:'50px',borderRadius:'50%',border:'2px solid #333',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'7px',fontWeight:'bold',textAlign:'center',lineHeight:'1.3'}}>ISS<br/>KOPERASI</div>
+        </div>
+        <div style={{textAlign:'center',fontWeight:'bold',fontSize:'14px',letterSpacing:'2px',marginBottom:'20px'}}>SURAT JALAN PENGIRIMAN BAHAN</div>
+        <table style={{marginBottom:'16px',fontSize:'13px'}}><tbody>
+          <tr><td style={{width:'90px',paddingBottom:'4px',color:'#555'}}>Kepada Yth</td><td></td></tr>
+          <tr><td style={{paddingBottom:'4px',color:'#555'}}>Nama</td><td>: <strong>{d?.pic}</strong>&nbsp;&nbsp;&nbsp;{d?.hp}</td></tr>
+          <tr><td style={{paddingBottom:'4px',color:'#555'}}>Alamat</td><td>: {d?.alamat}</td></tr>
+          <tr><td style={{paddingBottom:'4px',color:'#555'}}>Tanggal</td><td>: {o?.tanggal_kirim}</td></tr>
+        </tbody></table>
+        <div style={{marginBottom:'12px',fontSize:'13px'}}>Nama Pengirim : Kosim</div>
+        <table style={{width:'100%',borderCollapse:'collapse',marginBottom:'16px',fontSize:'12px'}}>
+          <thead><tr style={{background:'#f5f5f5'}}>{['No','Barang','Qty','Satuan','Ceklis jika sesuai','Keterangan'].map((h,i)=><th key={i} style={{border:'1px solid #ccc',padding:'6px 8px',textAlign:i===2?'right':'center'}}>{h}</th>)}</tr></thead>
+          <tbody>{o?.items?.map((it,i)=><tr key={i}>
+            <td style={{border:'1px solid #ccc',padding:'6px 8px',textAlign:'center'}}>{i+1}</td>
+            <td style={{border:'1px solid #ccc',padding:'6px 8px'}}>{it.nama}</td>
+            <td style={{border:'1px solid #ccc',padding:'6px 8px',textAlign:'right'}}>{it.qty.toLocaleString('id-ID')}</td>
+            <td style={{border:'1px solid #ccc',padding:'6px 8px',textAlign:'center'}}>{it.satuan}</td>
+            <td style={{border:'1px solid #ccc',padding:'6px 8px'}}></td>
+            <td style={{border:'1px solid #ccc',padding:'6px 8px'}}></td>
+          </tr>)}</tbody>
+        </table>
+        <div style={{marginBottom:'20px',fontSize:'12px'}}><strong>NOTES :</strong><br/>Mohon di cek bersama antara pengirim dan penerima bahan baku<br/>Jika ada bahan yang tidak sesuai kuntitas dan kualita mohon segera hubungi admin<br/>WA Admin 085351075661</div>
+        <div style={{display:'flex',justifyContent:'space-between',marginTop:'2rem'}}>
+          <div style={{textAlign:'center',width:'220px'}}>
+            <div style={{marginBottom:'8px',fontSize:'13px'}}>Hormat kami</div>
+            <div style={{height:'56px',border:'1px dashed #ccc',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'10px',color:'#aaa'}}>[Tanda Tangan Digital]</div>
+            <div style={{fontSize:'12px',marginTop:'4px'}}>Koperasi Insan Sinergi Sejahtera</div>
+          </div>
+          <div style={{textAlign:'center',width:'220px'}}>
+            <div style={{marginBottom:'8px',fontSize:'13px'}}>Tanda terima,</div>
+            <div style={{height:'56px'}}></div>
+            <div style={{fontSize:'12px'}}>({Array(44).fill('.').join('')})</div>
+          </div>
+        </div>
+      </div>
+    </div>);}
+  return(
+    <div style={{padding:'1.5rem',maxWidth:'680px'}}>
+      <h2 style={{marginBottom:'1.5rem'}}>Surat Jalan</h2>
+      <div style={{display:'flex',flexDirection:'column',gap:'8px'}}>
+        {orders.map(o=>{const d=DAPUR.find(x=>x.id===o.dapur_id);return(
+          <div key={o.id} style={{...cs.card,display:'flex',alignItems:'center',gap:'12px'}}>
+            <div style={{flex:1}}>
+              <div style={{fontWeight:500,marginBottom:'2px'}}>{d?.nama}</div>
+              <div style={{fontSize:'12px',color:'var(--color-text-secondary,#6b7280)'}}>{o.items.length} item · Kirim: {o.tanggal_kirim}</div>
+            </div>
+            <div style={{display:'flex',gap:'8px',alignItems:'center'}}>
+              {sbadge(o.status)}
+              <button onClick={()=>{setSel(o.id);setPrnt(true);}} style={btn('pri')}>Lihat Surat</button>
+            </div>
+          </div>);})}
+        {!orders.length&&<div style={{...cs.met,padding:'2rem',textAlign:'center',color:'var(--color-text-secondary,#6b7280)'}}>Belum ada order</div>}
+      </div>
+    </div>);
+}
+
+// =============================================
+// LAPORAN
+// =============================================
+function Laporan({orders}) {
+  const tj=orders.reduce((s,o)=>s+o.items.reduce((ss,i)=>ss+i.qty*i.harga_jual,0),0);
+  const tb=orders.reduce((s,o)=>s+o.items.reduce((ss,i)=>ss+i.qty*i.harga_beli,0),0);
+  const pf=tj-tb;const mg=tj>0?((pf/tj)*100).toFixed(1):0;
+  const pd=DAPUR.map(d=>{const dos=orders.filter(o=>o.dapur_id===d.id);const j=dos.reduce((s,o)=>s+o.items.reduce((ss,i)=>ss+i.qty*i.harga_jual,0),0);const b=dos.reduce((s,o)=>s+o.items.reduce((ss,i)=>ss+i.qty*i.harga_beli,0),0);return{nama:d.nama,ords:dos.length,j,b,pf:j-b};});
+  const im={};for(const o of orders)for(const it of o.items){if(!im[it.nama])im[it.nama]={nama:it.nama,qty:0,j:0,b:0};im[it.nama].qty+=it.qty;im[it.nama].j+=it.qty*it.harga_jual;im[it.nama].b+=it.qty*it.harga_beli;}
+  const pi=Object.values(im).map(x=>({...x,pf:x.j-x.b})).sort((a,b)=>b.pf-a.pf);
+  return(
+    <div style={{padding:'1.5rem',maxWidth:'960px'}}>
+      <h2 style={{marginBottom:'1.5rem'}}>Laporan Keuangan</h2>
+      <div style={{display:'grid',gridTemplateColumns:'repeat(4,minmax(0,1fr))',gap:'10px',marginBottom:'1.5rem'}}>
+        {[{l:'Total Penjualan',v:fRp(tj)},{l:'Total Pembelian',v:fRp(tb)},{l:'Total Profit',v:fRp(pf)},{l:'Margin',v:mg+'%'}].map(c=>(
+          <div key={c.l} style={cs.met}><div style={{fontSize:'11px',color:'var(--color-text-secondary,#6b7280)',marginBottom:'4px'}}>{c.l}</div><div style={{fontSize:'16px',fontWeight:500}}>{c.v}</div></div>
+        ))}
+      </div>
+      <div style={{...cs.card,marginBottom:'1rem'}}>
+        <div style={{fontSize:'14px',fontWeight:500,marginBottom:'12px'}}>Per Dapur</div>
+        <div style={{overflowX:'auto'}}>
+          <table style={{width:'100%',borderCollapse:'collapse',fontSize:'13px'}}>
+            <thead><tr style={{borderBottom:'0.5px solid var(--color-border-tertiary,#e5e7eb)'}}>{['Dapur','Order','Penjualan','Pembelian','Profit','Margin'].map((h,i)=><th key={i} style={{...cs.th,textAlign:i>=2?'right':'left'}}>{h}</th>)}</tr></thead>
+            <tbody>{pd.map(d=><tr key={d.nama} style={{borderBottom:'0.5px solid var(--color-border-tertiary,#e5e7eb)'}}>
+              <td style={cs.td}>{d.nama}</td><td style={cs.td}>{d.ords}</td>
+              <td style={{...cs.td,textAlign:'right'}}>{fRp(d.j)}</td><td style={{...cs.td,textAlign:'right'}}>{fRp(d.b)}</td>
+              <td style={{...cs.td,textAlign:'right',fontWeight:600,color:d.pf>=0?'#065f46':'#991b1b'}}>{fRp(d.pf)}</td>
+              <td style={{...cs.td,textAlign:'right',color:'var(--color-text-secondary,#6b7280)'}}>{d.j>0?((d.pf/d.j)*100).toFixed(1):0}%</td>
+            </tr>)}</tbody>
+          </table>
+        </div>
+      </div>
+      <div style={cs.card}>
+        <div style={{fontSize:'14px',fontWeight:500,marginBottom:'12px'}}>Per Item — profit tertinggi</div>
+        <div style={{overflowX:'auto'}}>
+          <table style={{width:'100%',borderCollapse:'collapse',fontSize:'13px'}}>
+            <thead><tr style={{borderBottom:'0.5px solid var(--color-border-tertiary,#e5e7eb)'}}>{['Bahan','Total Qty','Penjualan','Pembelian','Profit'].map((h,i)=><th key={i} style={{...cs.th,textAlign:i>=2?'right':'left'}}>{h}</th>)}</tr></thead>
+            <tbody>{pi.map(it=><tr key={it.nama} style={{borderBottom:'0.5px solid var(--color-border-tertiary,#e5e7eb)'}}>
+              <td style={cs.td}>{it.nama}</td><td style={cs.td}>{it.qty}</td>
+              <td style={{...cs.td,textAlign:'right'}}>{fRp(it.j)}</td><td style={{...cs.td,textAlign:'right'}}>{fRp(it.b)}</td>
+              <td style={{...cs.td,textAlign:'right',fontWeight:600,color:it.pf>=0?'#065f46':'#991b1b'}}>{fRp(it.pf)}</td>
+            </tr>)}</tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// =============================================
+// MAIN APP
+// =============================================
+function App() {
+  const [user,setUser]     = useState(null);
+  const [view,setView]     = useState('dashboard');
+  const [orders,setOrders] = useState([]);
+  const [tugas,setTugas]   = useState([]);
+  const [pngrm,setPngrm]   = useState([]);
+  const [loading,setLoading]= useState(false);
+  const [error,setError]   = useState(null);
+
+  const loadAll = useCallback(async () => {
+    setLoading(true); setError(null);
+    try {
+      const [o, t, p] = await Promise.all([
+        api.get('getOrders'),
+        api.get('getTugasBeli'),
+        api.get('getPengiriman'),
+      ]);
+      if (!Array.isArray(o)) throw new Error(o.error || 'getOrders gagal');
+      setOrders(o); setTugas(t||[]); setPngrm(p||[]);
+    } catch(e) { setError(e.message); }
+    setLoading(false);
+  }, []);
+
+  useEffect(() => { if (user) loadAll(); }, [user, loadAll]);
+
+  const login  = u => { setUser(u); setView(navItems(u.role)[0]?.id||'dashboard'); };
+  const logout = () => { setUser(null); setOrders([]); setTugas([]); setPngrm([]); };
+
+  if (!user) return <Login onLogin={login}/>;
+
+  const rv = () => { switch(view) {
+    case 'dashboard':    return <Dashboard orders={orders} pengiriman={pngrm} loading={loading} error={error} onRefresh={loadAll}/>;
+    case 'input_order':  return <InputOrder onOrderAdded={o=>setOrders(p=>[...p,o])} setView={setView}/>;
+    case 'rekap_beli':   return <RekapBeli orders={orders} tugasBeli={tugas} onTugasSaved={(t,tgl)=>setTugas(p=>[...p.filter(x=>x.tanggal!==tgl),...t])}/>;
+    case 'surat_jalan':  return <SuratJalan orders={orders}/>;
+    case 'laporan': case 'laporan_dapur': case 'laporan_item': return <Laporan orders={orders}/>;
+    case 'tugas_beli': case 'histori_beli': return <TugasBeli user={user} tugasBeli={tugas} onHargaSaved={(id,h)=>setTugas(p=>p.map(t=>t.id===id?{...t,harga_beli:h,status:'done'}:t))}/>;
+    case 'pengiriman':   return <PengirimanView user={user} orders={orders} pengiriman={pngrm} onKonfirmasi={pid=>setPngrm(p=>p.map(x=>x.id===pid?{...x,status:'delivered'}:x))}/>;
+    default:             return <Dashboard orders={orders} pengiriman={pngrm} loading={loading} error={error} onRefresh={loadAll}/>;
+  }};
+
+  return (
+    <div style={{display:'flex',minHeight:'100vh'}}>
+      <Sidebar user={user} view={view} setView={setView} onLogout={logout}/>
+      <main style={{flex:1,overflow:'auto',background:'var(--color-background-tertiary,#f3f4f6)'}}>{rv()}</main>
+    </div>
+  );
+}
+
+ReactDOM.render(<App/>, document.getElementById('root'));
+</script>
+</body>
+</html>
