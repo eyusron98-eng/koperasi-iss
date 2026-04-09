@@ -69,7 +69,7 @@ function nextDay(d) {
 }
 
 function navItems(role) {
-  if (role==='admin')      return [{id:'dashboard',label:'Dashboard'},{id:'input_order',label:'Input Order'},{id:'rekap_beli',label:'Rekap & Tugas Beli'},{id:'surat_jalan',label:'Surat Jalan'},{id:'laporan',label:'Laporan'}];
+  if (role==='admin')      return [{id:'dashboard',label:'Dashboard'},{id:'input_order',label:'Input Order'},{id:'rekap_beli',label:'Rekap & Tugas Beli'},{id:'surat_jalan',label:'Surat Jalan'},{id:'laporan',label:'Laporan'},{id:'kelola_akun',label:'Kelola Akun'}];
   if (role==='staf_beli')  return [{id:'tugas_beli',label:'Tugas Beli Hari Ini'},{id:'histori_beli',label:'Riwayat'}];
   if (role==='staf_kirim') return [{id:'pengiriman',label:'Daftar Pengiriman'}];
   if (role==='ceo'||role==='sekretaris') return [{id:'laporan',label:'Laporan Harian'},{id:'laporan_dapur',label:'Per Dapur'},{id:'laporan_item',label:'Per Item'}];
@@ -117,6 +117,7 @@ const badge = (v='inf') => ({
 const sbadge = (s) => {
   if (s==='delivered')    return <span style={badge('suc')}>Terkirim</span>;
   if (s==='pending_kirim')return <span style={badge('war')}>Siap Kirim</span>;
+  if (s==='cancelled')    return <span style={badge('dan')}>Dibatalkan</span>;
   return <span style={badge('inf')}>Draft</span>;
 };
 
@@ -146,6 +147,7 @@ function ErrorBox({message, onRetry}) {
 // =============================================
 function Login({onLogin}) {
   const [u,setU]=useState(''); const [p,setP]=useState(''); const [err,setErr]=useState(''); const [loading,setLoading]=useState(false);
+  const [showPass,setShowPass]=useState(false);
   const handle = async () => {
     if (!u || !p) { setErr('Isi username dan password'); return; }
     setLoading(true); setErr('');
@@ -170,7 +172,12 @@ function Login({onLogin}) {
         </div>
         <div style={{marginBottom:'16px'}}>
           <label style={{fontSize:'12px',color:'var(--color-text-secondary,#6b7280)',display:'block',marginBottom:'4px'}}>Password</label>
-          <input type="password" value={p} onChange={e=>setP(e.target.value)} onKeyDown={e=>e.key==='Enter'&&handle()} placeholder="Masukkan password" style={{width:'100%',boxSizing:'border-box'}}/>
+          <div style={{position:'relative'}}>
+            <input type={showPass?'text':'password'} value={p} onChange={e=>setP(e.target.value)} onKeyDown={e=>e.key==='Enter'&&handle()} placeholder="Masukkan password" style={{width:'100%',boxSizing:'border-box',paddingRight:'40px'}}/>
+            <button onClick={()=>setShowPass(x=>!x)} style={{position:'absolute',right:'8px',top:'50%',transform:'translateY(-50%)',background:'none',border:'none',cursor:'pointer',color:'#9ca3af',fontSize:'13px',padding:'2px 4px'}}>
+              {showPass ? '🙈' : '👁️'}
+            </button>
+          </div>
         </div>
         {err && <div style={{fontSize:'12px',color:'#991b1b',marginBottom:'12px',padding:'8px',background:'#fee2e2',borderRadius:'6px'}}>{err}</div>}
         <button onClick={handle} disabled={loading} style={{...btn('suc'),width:'100%',padding:'10px',fontSize:'14px',opacity:loading?0.6:1}}>
@@ -214,12 +221,48 @@ function Sidebar({user,view,setView,onLogout}) {
 // =============================================
 // DASHBOARD
 // =============================================
-function Dashboard({orders,pengiriman,loading,error,onRefresh}) {
+function Dashboard({orders,pengiriman,loading,error,onRefresh,onCancelOrder,isAdmin}) {
   const tj = orders.reduce((s,o)=>s+o.items.reduce((ss,i)=>ss+i.qty*i.harga_jual,0),0);
   const tb = orders.reduce((s,o)=>s+o.items.reduce((ss,i)=>ss+i.qty*i.harga_beli,0),0);
   const pf = tj - tb;
+  const [confirmId, setConfirmId] = useState(null);
+  const [cancelling, setCancelling] = useState(false);
+
+  const handleCancel = async () => {
+    setCancelling(true);
+    try {
+      const res = await api.post({action:'updateOrderStatus', orderId: confirmId, status:'cancelled'});
+      if (res.success) { onCancelOrder(confirmId); setConfirmId(null); }
+      else alert('Gagal membatalkan: '+(res.error||''));
+    } catch(e) { alert('Koneksi bermasalah'); }
+    setCancelling(false);
+  };
+
+  const cancelableOrder = orders.find(o=>o.id===confirmId);
+  const cancelableDapur = DAPUR.find(d=>d.id===cancelableOrder?.dapur_id);
+
   return (
     <div style={{padding:'1.5rem'}}>
+      {/* MODAL KONFIRMASI BATALKAN */}
+      {confirmId && (
+        <div style={{position:'fixed',top:0,left:0,right:0,bottom:0,background:'rgba(0,0,0,0.4)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:1000}}>
+          <div style={{background:'#fff',borderRadius:'12px',padding:'1.5rem',maxWidth:'380px',width:'90%',boxShadow:'0 20px 60px rgba(0,0,0,0.2)'}}>
+            <div style={{fontSize:'36px',textAlign:'center',marginBottom:'12px'}}>⚠️</div>
+            <div style={{fontSize:'16px',fontWeight:600,textAlign:'center',marginBottom:'8px',color:'#111'}}>Batalkan Order?</div>
+            <div style={{fontSize:'13px',color:'#6b7280',textAlign:'center',marginBottom:'1.5rem',lineHeight:'1.6'}}>
+              Kamu akan membatalkan order <strong style={{color:'#111'}}>{cancelableDapur?.nama}</strong> tanggal kirim <strong style={{color:'#111'}}>{cancelableOrder?.tanggal_kirim}</strong>. Tindakan ini tidak dapat diurungkan.
+            </div>
+            <div style={{display:'flex',gap:'8px'}}>
+              <button onClick={()=>setConfirmId(null)} style={{...btn(),flex:1,padding:'10px',fontSize:'13px'}}>Batal</button>
+              <button onClick={handleCancel} disabled={cancelling}
+                style={{...btn('dan'),flex:1,padding:'10px',fontSize:'13px',fontWeight:600,opacity:cancelling?0.6:1}}>
+                {cancelling ? 'Membatalkan...' : 'Ya, Batalkan'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'1.5rem'}}>
         <h2 style={{margin:0}}>Dashboard</h2>
         <button onClick={onRefresh} style={{...btn(),padding:'6px 14px',fontSize:'12px'}}>↻ Refresh</button>
@@ -236,13 +279,32 @@ function Dashboard({orders,pengiriman,loading,error,onRefresh}) {
           <div style={{overflowX:'auto'}}>
             <table style={{width:'100%',borderCollapse:'collapse'}}>
               <thead><tr style={{borderBottom:'0.5px solid var(--color-border-tertiary,#e5e7eb)'}}>
-                {['Dapur','Tgl Order','Tgl Kirim','Item','Nilai Jual','Status'].map((h,i)=><th key={i} style={{...cs.th,textAlign:i===4?'right':'left'}}>{h}</th>)}
+                {['Dapur','Tgl Order','Tgl Kirim','Item','Nilai Jual','Status',isAdmin?'Aksi':''].map((h,i)=><th key={i} style={{...cs.th,textAlign:i===4?'right':'left'}}>{h}</th>)}
               </tr></thead>
               <tbody>
-                {orders.map(o=>{const d=DAPUR.find(x=>x.id===o.dapur_id);const n=o.items.reduce((s,i)=>s+i.qty*i.harga_jual,0);return(
-                  <tr key={o.id}><td style={cs.td}>{d?.nama}</td><td style={{...cs.td,color:'var(--color-text-secondary,#6b7280)'}}>{o.tanggal_order}</td><td style={{...cs.td,color:'var(--color-text-secondary,#6b7280)'}}>{o.tanggal_kirim}</td><td style={{...cs.td,color:'var(--color-text-secondary,#6b7280)'}}>{o.items.length} item</td><td style={{...cs.td,textAlign:'right'}}>{fRp(n)}</td><td style={cs.td}>{sbadge(o.status)}</td></tr>
+                {orders.map(o=>{
+                  const d=DAPUR.find(x=>x.id===o.dapur_id);
+                  const n=o.items.reduce((s,i)=>s+i.qty*i.harga_jual,0);
+                  const canCancel = isAdmin && o.status !== 'delivered' && o.status !== 'cancelled';
+                  return(
+                  <tr key={o.id} style={{opacity:o.status==='cancelled'?0.5:1}}>
+                    <td style={cs.td}>{d?.nama}</td>
+                    <td style={{...cs.td,color:'var(--color-text-secondary,#6b7280)'}}>{o.tanggal_order}</td>
+                    <td style={{...cs.td,color:'var(--color-text-secondary,#6b7280)'}}>{o.tanggal_kirim}</td>
+                    <td style={{...cs.td,color:'var(--color-text-secondary,#6b7280)'}}>{o.items.length} item</td>
+                    <td style={{...cs.td,textAlign:'right',textDecoration:o.status==='cancelled'?'line-through':''}}>{fRp(n)}</td>
+                    <td style={cs.td}>{sbadge(o.status)}</td>
+                    {isAdmin && <td style={cs.td}>
+                      {canCancel && (
+                        <button onClick={()=>setConfirmId(o.id)}
+                          style={{...btn('dan'),padding:'4px 10px',fontSize:'11px'}}>
+                          Batalkan
+                        </button>
+                      )}
+                    </td>}
+                  </tr>
                 );})}
-                {!orders.length && <tr><td colSpan={6} style={{...cs.td,textAlign:'center',color:'var(--color-text-secondary,#6b7280)'}}>Belum ada order</td></tr>}
+                {!orders.length && <tr><td colSpan={7} style={{...cs.td,textAlign:'center',color:'var(--color-text-secondary,#6b7280)'}}>Belum ada order</td></tr>}
               </tbody>
             </table>
           </div>
@@ -645,6 +707,200 @@ function Laporan({orders}) {
 }
 
 // =============================================
+// KELOLA AKUN (Admin only)
+// =============================================
+function KelolaAkun() {
+  const [users, setUsers]       = useState([]);
+  const [loading, setLoading]   = useState(true);
+  const [showForm, setShowForm] = useState(false);
+  const [saving, setSaving]     = useState(false);
+  const [showPassMap, setShowPassMap] = useState({});
+  const [delConfirm, setDelConfirm]   = useState(null);
+  const [deleting, setDeleting]       = useState(false);
+  const [form, setForm] = useState({name:'', username:'', password:'', role:'staf_beli'});
+  const [formErr, setFormErr]   = useState('');
+  const [showNewPass, setShowNewPass] = useState(false);
+
+  const allowedRoles = ['staf_beli','staf_kirim'];
+  const roleLabel = {staf_beli:'Staf Pembelian', staf_kirim:'Staf Pengiriman'};
+  const roleBg    = {staf_beli:'#d1fae5', staf_kirim:'#fef3c7'};
+  const roleColor = {staf_beli:'#065f46', staf_kirim:'#92400e'};
+
+  const load = async () => {
+    setLoading(true);
+    try {
+      const res = await api.get('getUsers');
+      if (Array.isArray(res)) setUsers(res.filter(u => allowedRoles.includes(u.role)));
+    } catch(e) {}
+    setLoading(false);
+  };
+
+  useEffect(() => { load(); }, []);
+
+  const toggleShowPass = (id) => setShowPassMap(p => ({...p, [id]: !p[id]}));
+
+  const validate = () => {
+    if (!form.name.trim())     return 'Nama lengkap wajib diisi';
+    if (!form.username.trim()) return 'Username wajib diisi';
+    if (form.username.includes(' ')) return 'Username tidak boleh mengandung spasi';
+    if (form.password.length < 4)  return 'Password minimal 4 karakter';
+    if (users.find(u => u.username === form.username)) return 'Username sudah dipakai, pilih yang lain';
+    return '';
+  };
+
+  const handleSave = async () => {
+    const err = validate();
+    if (err) { setFormErr(err); return; }
+    setSaving(true); setFormErr('');
+    try {
+      const newUser = {id:'u-'+Date.now(), ...form};
+      const res = await api.post({action:'addUser', user: newUser});
+      if (res.success) {
+        setUsers(p => [...p, newUser]);
+        setForm({name:'', username:'', password:'', role:'staf_beli'});
+        setShowForm(false);
+        setShowNewPass(false);
+      } else setFormErr(res.error || 'Gagal menyimpan');
+    } catch(e) { setFormErr('Koneksi bermasalah'); }
+    setSaving(false);
+  };
+
+  const handleDelete = async (userId) => {
+    setDeleting(true);
+    try {
+      const res = await api.post({action:'deleteUser', userId});
+      if (res.success) { setUsers(p => p.filter(u => u.id !== userId)); setDelConfirm(null); }
+      else alert('Gagal menghapus: '+(res.error||''));
+    } catch(e) { alert('Koneksi bermasalah'); }
+    setDeleting(false);
+  };
+
+  const delUser = users.find(u => u.id === delConfirm);
+
+  return (
+    <div style={{padding:'1.5rem', maxWidth:'700px'}}>
+
+      {/* MODAL KONFIRMASI HAPUS */}
+      {delConfirm && (
+        <div style={{position:'fixed',top:0,left:0,right:0,bottom:0,background:'rgba(0,0,0,0.4)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:1000}}>
+          <div style={{background:'#fff',borderRadius:'12px',padding:'1.5rem',maxWidth:'360px',width:'90%'}}>
+            <div style={{fontSize:'32px',textAlign:'center',marginBottom:'10px'}}>🗑️</div>
+            <div style={{fontSize:'15px',fontWeight:600,textAlign:'center',marginBottom:'8px'}}>Hapus Akun?</div>
+            <div style={{fontSize:'13px',color:'#6b7280',textAlign:'center',marginBottom:'1.5rem',lineHeight:'1.6'}}>
+              Akun <strong style={{color:'#111'}}>{delUser?.name}</strong> ({delUser?.username}) akan dihapus permanen.
+            </div>
+            <div style={{display:'flex',gap:'8px'}}>
+              <button onClick={()=>setDelConfirm(null)} style={{...btn(),flex:1,padding:'9px'}}>Batal</button>
+              <button onClick={()=>handleDelete(delConfirm)} disabled={deleting}
+                style={{...btn('dan'),flex:1,padding:'9px',opacity:deleting?0.6:1}}>
+                {deleting?'Menghapus...':'Hapus'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'1.5rem'}}>
+        <h2 style={{margin:0}}>Kelola Akun</h2>
+        <button onClick={()=>{setShowForm(x=>!x);setFormErr('');}} style={btn('pri')}>
+          {showForm ? '✕ Tutup' : '+ Buat Akun Baru'}
+        </button>
+      </div>
+
+      {/* FORM BUAT AKUN BARU */}
+      {showForm && (
+        <div style={{...cs.card, marginBottom:'1rem', border:'1.5px solid #93c5fd'}}>
+          <div style={{fontSize:'14px',fontWeight:500,marginBottom:'1rem',color:'#1e40af'}}>Buat Akun Baru</div>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'12px',marginBottom:'12px'}}>
+            <div>
+              <label style={{fontSize:'12px',color:'#6b7280',display:'block',marginBottom:'4px'}}>Nama Lengkap <span style={{color:'#991b1b'}}>*</span></label>
+              <input value={form.name} onChange={e=>setForm(p=>({...p,name:e.target.value}))} placeholder="contoh: Dodi Firmansyah" style={{width:'100%',boxSizing:'border-box'}}/>
+            </div>
+            <div>
+              <label style={{fontSize:'12px',color:'#6b7280',display:'block',marginBottom:'4px'}}>Username <span style={{color:'#991b1b'}}>*</span></label>
+              <input value={form.username} onChange={e=>setForm(p=>({...p,username:e.target.value.toLowerCase().replace(/\s/g,'')}))} placeholder="contoh: dodi" style={{width:'100%',boxSizing:'border-box'}}/>
+            </div>
+            <div>
+              <label style={{fontSize:'12px',color:'#6b7280',display:'block',marginBottom:'4px'}}>Password <span style={{color:'#991b1b'}}>*</span></label>
+              <div style={{position:'relative'}}>
+                <input type={showNewPass?'text':'password'} value={form.password} onChange={e=>setForm(p=>({...p,password:e.target.value}))} placeholder="Min. 4 karakter" style={{width:'100%',boxSizing:'border-box',paddingRight:'40px'}}/>
+                <button onClick={()=>setShowNewPass(x=>!x)} style={{position:'absolute',right:'8px',top:'50%',transform:'translateY(-50%)',background:'none',border:'none',cursor:'pointer',color:'#9ca3af',fontSize:'13px',padding:'2px 4px'}}>
+                  {showNewPass ? '🙈' : '👁️'}
+                </button>
+              </div>
+            </div>
+            <div>
+              <label style={{fontSize:'12px',color:'#6b7280',display:'block',marginBottom:'4px'}}>Role <span style={{color:'#991b1b'}}>*</span></label>
+              <select value={form.role} onChange={e=>setForm(p=>({...p,role:e.target.value}))} style={{width:'100%',boxSizing:'border-box'}}>
+                <option value="staf_beli">Staf Pembelian</option>
+                <option value="staf_kirim">Staf Pengiriman</option>
+              </select>
+            </div>
+          </div>
+          {formErr && <div style={{fontSize:'12px',color:'#991b1b',padding:'8px',background:'#fee2e2',borderRadius:'6px',marginBottom:'12px'}}>{formErr}</div>}
+          <div style={{display:'flex',gap:'8px'}}>
+            <button onClick={()=>{setShowForm(false);setFormErr('');setForm({name:'',username:'',password:'',role:'staf_beli'});}} style={btn()}>Batal</button>
+            <button onClick={handleSave} disabled={saving} style={{...btn('suc'),opacity:saving?0.6:1}}>
+              {saving?'Menyimpan...':'Simpan Akun ✓'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* DAFTAR AKUN */}
+      {loading ? <Spinner/> : (
+        <div style={cs.card}>
+          <div style={{fontSize:'14px',fontWeight:500,marginBottom:'12px'}}>
+            Daftar Akun Staf ({users.length} akun)
+          </div>
+          {!users.length ? (
+            <div style={{padding:'2rem',textAlign:'center',color:'#6b7280',fontSize:'13px'}}>Belum ada akun staf. Buat akun baru di atas.</div>
+          ) : (
+            <table style={{width:'100%',borderCollapse:'collapse'}}>
+              <thead>
+                <tr style={{borderBottom:'0.5px solid #e5e7eb'}}>
+                  {['Nama','Username','Password','Role',''].map((h,i)=>(
+                    <th key={i} style={{...cs.th,textAlign:'left'}}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {users.map(u => (
+                  <tr key={u.id} style={{borderBottom:'0.5px solid #f3f4f6'}}>
+                    <td style={{...cs.td,fontWeight:500}}>{u.name}</td>
+                    <td style={{...cs.td,fontFamily:'monospace',fontSize:'12px',color:'#374151'}}>{u.username}</td>
+                    <td style={{...cs.td}}>
+                      <div style={{display:'flex',alignItems:'center',gap:'6px'}}>
+                        <span style={{fontFamily:'monospace',fontSize:'12px',color:'#374151',minWidth:'80px'}}>
+                          {showPassMap[u.id] ? u.password : '••••••'}
+                        </span>
+                        <button onClick={()=>toggleShowPass(u.id)} style={{background:'none',border:'none',cursor:'pointer',color:'#9ca3af',fontSize:'13px',padding:'0 2px',lineHeight:1}}>
+                          {showPassMap[u.id] ? '🙈' : '👁️'}
+                        </button>
+                      </div>
+                    </td>
+                    <td style={cs.td}>
+                      <span style={{...badge(),background:roleBg[u.role]||'#f3f4f6',color:roleColor[u.role]||'#374151'}}>
+                        {roleLabel[u.role]||u.role}
+                      </span>
+                    </td>
+                    <td style={cs.td}>
+                      <button onClick={()=>setDelConfirm(u.id)} style={{...btn('dan'),padding:'4px 10px',fontSize:'11px'}}>
+                        Hapus
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// =============================================
 // MAIN APP
 // =============================================
 function App() {
@@ -674,18 +930,23 @@ function App() {
 
   const login  = u => { setUser(u); setView(navItems(u.role)[0]?.id||'dashboard'); };
   const logout = () => { setUser(null); setOrders([]); setTugas([]); setPngrm([]); };
+  const isAdmin = user?.role === 'admin';
+  const handleCancelOrder = (orderId) => {
+    setOrders(prev => prev.map(o => o.id === orderId ? {...o, status:'cancelled'} : o));
+  };
 
   if (!user) return <Login onLogin={login}/>;
 
   const rv = () => { switch(view) {
-    case 'dashboard':    return <Dashboard orders={orders} pengiriman={pngrm} loading={loading} error={error} onRefresh={loadAll}/>;
+    case 'dashboard':    return <Dashboard orders={orders} pengiriman={pngrm} loading={loading} error={error} onRefresh={loadAll} onCancelOrder={handleCancelOrder} isAdmin={isAdmin}/>;
     case 'input_order':  return <InputOrder onOrderAdded={o=>setOrders(p=>[...p,o])} setView={setView}/>;
     case 'rekap_beli':   return <RekapBeli orders={orders} tugasBeli={tugas} onTugasSaved={(t,tgl)=>setTugas(p=>[...p.filter(x=>x.tanggal!==tgl),...t])}/>;
     case 'surat_jalan':  return <SuratJalan orders={orders}/>;
     case 'laporan': case 'laporan_dapur': case 'laporan_item': return <Laporan orders={orders}/>;
     case 'tugas_beli': case 'histori_beli': return <TugasBeli user={user} tugasBeli={tugas} onHargaSaved={(id,h)=>setTugas(p=>p.map(t=>t.id===id?{...t,harga_beli:h,status:'done'}:t))}/>;
     case 'pengiriman':   return <PengirimanView user={user} orders={orders} pengiriman={pngrm} onKonfirmasi={pid=>setPngrm(p=>p.map(x=>x.id===pid?{...x,status:'delivered'}:x))}/>;
-    default:             return <Dashboard orders={orders} pengiriman={pngrm} loading={loading} error={error} onRefresh={loadAll}/>;
+    case 'kelola_akun':  return <KelolaAkun/>;
+    default:             return <Dashboard orders={orders} pengiriman={pngrm} loading={loading} error={error} onRefresh={loadAll} onCancelOrder={handleCancelOrder} isAdmin={isAdmin}/>;
   }};
 
   return (
