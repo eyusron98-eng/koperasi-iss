@@ -38,7 +38,7 @@ const DAPUR = [
   {id:'sukamukti', nama:'Sukamukti',   pic:'Della Maldini', hp:'0882000476152',  alamat:'SPPG Sukamukti, Majalaya'},
   {id:'cipaku2',   nama:'Cipaku 2',    pic:'Bu Wati',       hp:'08444444444',    alamat:'SPPG Cipaku 2, Bandung'},
 ];
-const STAF_BELI = [{id:'ahmad',nama:'Ahmad'},{id:'budi',nama:'Budi'},{id:'cici',nama:'Cici'}];
+// STAF_BELI dimuat dinamis dari backend — lihat state di App()
 
 // ---- HELPERS ----
 function fRp(n) {
@@ -407,7 +407,7 @@ function InputOrder({onOrderAdded,setView}) {
 // =============================================
 // REKAP & TUGAS BELI
 // =============================================
-function RekapBeli({orders,tugasBeli,onTugasSaved}) {
+function RekapBeli({orders,tugasBeli,onTugasSaved,stafBeli}) {
   const [sd,setSd]=useState(nextDay(new Date().toISOString().slice(0,10)));
   const [asgn,setAsgn]=useState({});
   const [saving,setSaving]=useState(false);
@@ -443,7 +443,7 @@ function RekapBeli({orders,tugasBeli,onTugasSaved}) {
 
   const wa=()=>{
     const ls=['*Tugas Beli Bahan - '+sd+'*',''];const bs={};
-    for(const it of ri){const a=asgn[it.nama];if(a?.staf){const sn=STAF_BELI.find(s=>s.id===a.staf)?.nama||a.staf;if(!bs[sn])bs[sn]=[];bs[sn].push(`• ${it.nama}: ${parseFloat(a.qty)||it.total} ${it.satuan}`);}}
+    for(const it of ri){const a=asgn[it.nama];if(a?.staf){const sn=stafBeli.find(s=>s.id===a.staf)?.nama||a.staf;if(!bs[sn])bs[sn]=[];bs[sn].push(`• ${it.nama}: ${parseFloat(a.qty)||it.total} ${it.satuan}`);}}
     for(const[sn,its]of Object.entries(bs)){ls.push(`*${sn}:*`);its.forEach(x=>ls.push(x));ls.push('');}
     if(navigator.clipboard) navigator.clipboard.writeText(ls.join('\n')).then(()=>alert('Teks WA disalin ke clipboard!'));
     else alert(ls.join('\n'));
@@ -472,7 +472,7 @@ function RekapBeli({orders,tugasBeli,onTugasSaved}) {
               <td style={{...cs.td,textAlign:'right',color:'var(--color-text-secondary,#6b7280)'}}>{it.satuan}</td>
               <td style={{...cs.td,fontSize:'11px',color:'var(--color-text-secondary,#6b7280)'}}>{it.ords.map(o=>`${o.dapur}: ${o.qty}`).join(' · ')}</td>
               <td style={cs.td}><select value={asgn[it.nama]?.staf||''} onChange={e=>sa(it.nama,'staf',e.target.value)} style={{fontSize:'12px',padding:'4px'}}>
-                <option value="">— Pilih —</option>{STAF_BELI.map(s=><option key={s.id} value={s.id}>{s.nama}</option>)}
+                <option value="">— Pilih —</option>{stafBeli.map(s=><option key={s.id} value={s.id}>{s.nama}</option>)}
               </select></td>
               <td style={cs.td}><input type="number" defaultValue={it.total} onChange={e=>sa(it.nama,'qty',e.target.value)} style={{width:'65px',textAlign:'right',padding:'4px',fontSize:'12px'}}/></td>
             </tr>)}</tbody>
@@ -709,9 +709,10 @@ function Laporan({orders}) {
 // =============================================
 // KELOLA AKUN (Admin only)
 // =============================================
-function KelolaAkun() {
-  const [users, setUsers]       = useState([]);
-  const [loading, setLoading]   = useState(true);
+function KelolaAkun({allUsers, onUsersChanged}) {
+  const allowedRoles = ['staf_beli','staf_kirim'];
+  const users = allUsers.filter(u => allowedRoles.includes(u.role));
+  const [loading, setLoading]   = useState(false);
   const [showForm, setShowForm] = useState(false);
   const [saving, setSaving]     = useState(false);
   const [showPassMap, setShowPassMap] = useState({});
@@ -721,21 +722,9 @@ function KelolaAkun() {
   const [formErr, setFormErr]   = useState('');
   const [showNewPass, setShowNewPass] = useState(false);
 
-  const allowedRoles = ['staf_beli','staf_kirim'];
   const roleLabel = {staf_beli:'Staf Pembelian', staf_kirim:'Staf Pengiriman'};
   const roleBg    = {staf_beli:'#d1fae5', staf_kirim:'#fef3c7'};
   const roleColor = {staf_beli:'#065f46', staf_kirim:'#92400e'};
-
-  const load = async () => {
-    setLoading(true);
-    try {
-      const res = await api.get('getUsers');
-      if (Array.isArray(res)) setUsers(res.filter(u => allowedRoles.includes(u.role)));
-    } catch(e) {}
-    setLoading(false);
-  };
-
-  useEffect(() => { load(); }, []);
 
   const toggleShowPass = (id) => setShowPassMap(p => ({...p, [id]: !p[id]}));
 
@@ -744,7 +733,7 @@ function KelolaAkun() {
     if (!form.username.trim()) return 'Username wajib diisi';
     if (form.username.includes(' ')) return 'Username tidak boleh mengandung spasi';
     if (form.password.length < 4)  return 'Password minimal 4 karakter';
-    if (users.find(u => u.username === form.username)) return 'Username sudah dipakai, pilih yang lain';
+    if (allUsers.find(u => u.username === form.username)) return 'Username sudah dipakai, pilih yang lain';
     return '';
   };
 
@@ -756,7 +745,7 @@ function KelolaAkun() {
       const newUser = {id:'u-'+Date.now(), ...form};
       const res = await api.post({action:'addUser', user: newUser});
       if (res.success) {
-        setUsers(p => [...p, newUser]);
+        onUsersChanged(p => [...p, newUser]);
         setForm({name:'', username:'', password:'', role:'staf_beli'});
         setShowForm(false);
         setShowNewPass(false);
@@ -769,7 +758,7 @@ function KelolaAkun() {
     setDeleting(true);
     try {
       const res = await api.post({action:'deleteUser', userId});
-      if (res.success) { setUsers(p => p.filter(u => u.id !== userId)); setDelConfirm(null); }
+      if (res.success) { onUsersChanged(p => p.filter(u => u.id !== userId)); setDelConfirm(null); }
       else alert('Gagal menghapus: '+(res.error||''));
     } catch(e) { alert('Koneksi bermasalah'); }
     setDeleting(false);
@@ -909,19 +898,22 @@ function App() {
   const [orders,setOrders] = useState([]);
   const [tugas,setTugas]   = useState([]);
   const [pngrm,setPngrm]   = useState([]);
+  const [allUsers,setAllUsers] = useState([]);
   const [loading,setLoading]= useState(false);
   const [error,setError]   = useState(null);
 
   const loadAll = useCallback(async () => {
     setLoading(true); setError(null);
     try {
-      const [o, t, p] = await Promise.all([
+      const [o, t, p, u] = await Promise.all([
         api.get('getOrders'),
         api.get('getTugasBeli'),
         api.get('getPengiriman'),
+        api.get('getUsers'),
       ]);
       if (!Array.isArray(o)) throw new Error(o.error || 'getOrders gagal');
       setOrders(o); setTugas(t||[]); setPngrm(p||[]);
+      setAllUsers(Array.isArray(u) ? u : []);
     } catch(e) { setError(e.message); }
     setLoading(false);
   }, []);
@@ -929,7 +921,7 @@ function App() {
   useEffect(() => { if (user) loadAll(); }, [user, loadAll]);
 
   const login  = u => { setUser(u); setView(navItems(u.role)[0]?.id||'dashboard'); };
-  const logout = () => { setUser(null); setOrders([]); setTugas([]); setPngrm([]); };
+  const logout = () => { setUser(null); setOrders([]); setTugas([]); setPngrm([]); setAllUsers([]); };
   const isAdmin = user?.role === 'admin';
   const handleCancelOrder = (orderId) => {
     setOrders(prev => prev.map(o => o.id === orderId ? {...o, status:'cancelled'} : o));
@@ -937,15 +929,17 @@ function App() {
 
   if (!user) return <Login onLogin={login}/>;
 
+  const stafBeli = allUsers.filter(u => u.role === 'staf_beli').map(u => ({id: u.username, nama: u.name}));
+
   const rv = () => { switch(view) {
     case 'dashboard':    return <Dashboard orders={orders} pengiriman={pngrm} loading={loading} error={error} onRefresh={loadAll} onCancelOrder={handleCancelOrder} isAdmin={isAdmin}/>;
     case 'input_order':  return <InputOrder onOrderAdded={o=>setOrders(p=>[...p,o])} setView={setView}/>;
-    case 'rekap_beli':   return <RekapBeli orders={orders} tugasBeli={tugas} onTugasSaved={(t,tgl)=>setTugas(p=>[...p.filter(x=>x.tanggal!==tgl),...t])}/>;
+    case 'rekap_beli':   return <RekapBeli orders={orders} tugasBeli={tugas} stafBeli={stafBeli} onTugasSaved={(t,tgl)=>setTugas(p=>[...p.filter(x=>x.tanggal!==tgl),...t])}/>;
     case 'surat_jalan':  return <SuratJalan orders={orders}/>;
     case 'laporan': case 'laporan_dapur': case 'laporan_item': return <Laporan orders={orders}/>;
     case 'tugas_beli': case 'histori_beli': return <TugasBeli user={user} tugasBeli={tugas} onHargaSaved={(id,h)=>setTugas(p=>p.map(t=>t.id===id?{...t,harga_beli:h,status:'done'}:t))}/>;
     case 'pengiriman':   return <PengirimanView user={user} orders={orders} pengiriman={pngrm} onKonfirmasi={pid=>setPngrm(p=>p.map(x=>x.id===pid?{...x,status:'delivered'}:x))}/>;
-    case 'kelola_akun':  return <KelolaAkun/>;
+    case 'kelola_akun':  return <KelolaAkun allUsers={allUsers} onUsersChanged={setAllUsers}/>;
     default:             return <Dashboard orders={orders} pengiriman={pngrm} loading={loading} error={error} onRefresh={loadAll} onCancelOrder={handleCancelOrder} isAdmin={isAdmin}/>;
   }};
 
