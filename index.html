@@ -24,9 +24,6 @@ h2{font-size:18px;font-weight:500;color:#111}
 <script type="text/babel">
 const {useState, useMemo, useEffect, useCallback} = React;
 
-// =============================================
-// KONFIGURASI
-// =============================================
 const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzDvERzufLQJNeYreqZMZfEdGjBUxDw3avmYKvLOG8NJTJ5yF3Z67LVriqfyZUl4gOJ6w/exec';
 
 const DAPUR = [
@@ -36,1286 +33,567 @@ const DAPUR = [
   {id:'cipaku2',    nama:'Cipaku 2',    pic:'Bu Wati',       hp:'08444444444',   alamat:'SPPG Cipaku 2, Bandung'},
 ];
 
-// =============================================
-// HELPERS
-// =============================================
-function normDate(d) {
-  if (!d) return '';
-  const s = String(d).trim();
-  // Sudah format YYYY-MM-DD → langsung return
-  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
-  // ISO string dengan timezone (mis. "2026-04-08T17:00:00.000Z")
-  // Konversi ke waktu lokal device (WIB), bukan potong UTC mentah
-  if (s.includes('T') || s.includes('Z')) {
-    const dt = new Date(s);
-    if (!isNaN(dt.getTime())) {
-      const y = dt.getFullYear();
-      const m = String(dt.getMonth()+1).padStart(2,'0');
-      const dd = String(dt.getDate()).padStart(2,'0');
-      return `${y}-${m}-${dd}`;
-    }
-  }
-  return s.slice(0, 10);
+function normDate(d){if(!d)return'';const s=String(d).trim();if(/^\d{4}-\d{2}-\d{2}$/.test(s))return s;if(s.includes('T')||s.includes('Z')){const dt=new Date(s);if(!isNaN(dt.getTime()))return`${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,'0')}-${String(dt.getDate()).padStart(2,'0')}`;}return s.slice(0,10);}
+function todayLocal(){const d=new Date();return`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;}
+function nextDay(ds){const d=new Date(ds+'T00:00:00');d.setDate(d.getDate()+1);return`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;}
+function fRp(n){if(!n||isNaN(n))return'Rp 0';return'Rp '+Math.round(n).toLocaleString('id-ID');}
+function parseRAB(text){const lines=text.trim().split('\n');const items=[];for(const line of lines){if(!line.trim())continue;const p=line.split('\t');if(p.length>=4){const nama=p[0].trim(),qty=parseFloat(p[1].replace(',','.'))||0,sat=p[2].trim(),h=parseInt(p[3].replace(/[^0-9]/g,''))||0;if(nama&&qty>0)items.push({nama,qty,satuan:sat,harga_jual:h,harga_beli:0});}}return items;}
+function navItems(role){
+  if(role==='admin')return[{id:'dashboard',label:'Dashboard'},{id:'input_order',label:'Input Order'},{id:'rekap_beli',label:'Rekap & Tugas Beli'},{id:'surat_jalan',label:'Surat Jalan'},{id:'laporan',label:'Laporan'},{id:'kelola_akun',label:'Kelola Akun'}];
+  if(role==='staf_beli')return[{id:'tugas_beli',label:'Tugas Beli'},{id:'histori_beli',label:'Riwayat'}];
+  if(role==='staf_kirim')return[{id:'pengiriman',label:'Daftar Pengiriman'}];
+  if(role==='ceo'||role==='sekretaris')return[{id:'laporan',label:'Laporan'}];
+  return[];
 }
+const api={async get(action,params={}){const qs=new URLSearchParams({action,...params}).toString();const res=await fetch(`${SCRIPT_URL}?${qs}`);return res.json();},async post(body){const res=await fetch(SCRIPT_URL,{method:'POST',body:JSON.stringify(body)});return res.json();}};
 
-function todayLocal() {
-  const d = new Date();
-  const y = d.getFullYear();
-  const m = String(d.getMonth()+1).padStart(2,'0');
-  const dd = String(d.getDate()).padStart(2,'0');
-  return `${y}-${m}-${dd}`;
-}
-
-function nextDay(dateStr) {
-  const d = new Date(dateStr + 'T00:00:00');
-  d.setDate(d.getDate() + 1);
-  const y = d.getFullYear();
-  const m = String(d.getMonth()+1).padStart(2,'0');
-  const dd = String(d.getDate()).padStart(2,'0');
-  return `${y}-${m}-${dd}`;
-}
-
-function fRp(n) {
-  if (!n || isNaN(n)) return 'Rp 0';
-  return 'Rp ' + Math.round(n).toLocaleString('id-ID');
-}
-
-function parseRAB(text) {
-  const lines = text.trim().split('\n');
-  const items = [];
-  for (const line of lines) {
-    if (!line.trim()) continue;
-    const p = line.split('\t');
-    if (p.length >= 4) {
-      const nama = p[0].trim();
-      const qty  = parseFloat(p[1].replace(',','.')) || 0;
-      const sat  = p[2].trim();
-      const h    = parseInt(p[3].replace(/[^0-9]/g,'')) || 0;
-      if (nama && qty > 0) items.push({nama, qty, satuan: sat, harga_jual: h, harga_beli: 0});
-    }
-  }
-  return items;
-}
-
-function navItems(role) {
-  if (role === 'admin')     return [{id:'dashboard',label:'Dashboard'},{id:'input_order',label:'Input Order'},{id:'rekap_beli',label:'Rekap & Tugas Beli'},{id:'surat_jalan',label:'Surat Jalan'},{id:'laporan',label:'Laporan'},{id:'kelola_akun',label:'Kelola Akun'}];
-  if (role === 'staf_beli') return [{id:'tugas_beli',label:'Tugas Beli Hari Ini'},{id:'histori_beli',label:'Riwayat'}];
-  if (role === 'staf_kirim')return [{id:'pengiriman',label:'Daftar Pengiriman'}];
-  if (role === 'ceo' || role === 'sekretaris') return [{id:'laporan',label:'Laporan Harian'},{id:'laporan_dapur',label:'Per Dapur'},{id:'laporan_item',label:'Per Item'}];
-  return [];
-}
-
-// =============================================
-// API
-// =============================================
-const api = {
-  async get(action, params = {}) {
-    const qs = new URLSearchParams({action, ...params}).toString();
-    const res = await fetch(`${SCRIPT_URL}?${qs}`);
-    return res.json();
-  },
-  async post(body) {
-    const res = await fetch(SCRIPT_URL, {method:'POST', body: JSON.stringify(body)});
-    return res.json();
-  }
-};
-
-// =============================================
-// STYLES
-// =============================================
-const C = {
-  card: {background:'#fff', border:'1px solid #e5e7eb', borderRadius:'10px', padding:'1rem 1.25rem'},
-  met:  {background:'#f9fafb', borderRadius:'8px', padding:'1rem'},
-  th:   {padding:'6px 8px', fontWeight:500, color:'#6b7280', fontSize:'12px', textAlign:'left'},
-  td:   {padding:'7px 8px', fontSize:'13px', borderBottom:'1px solid #f3f4f6'},
-};
-
-function btn(v) {
-  const base = {padding:'8px 16px', fontSize:'13px', fontWeight:500, borderRadius:'8px', cursor:'pointer', border:'none'};
-  if (v === 'suc') return {...base, background:'#d1fae5', color:'#065f46'};
-  if (v === 'pri') return {...base, background:'#dbeafe', color:'#1e40af'};
-  if (v === 'war') return {...base, background:'#fef3c7', color:'#92400e'};
-  if (v === 'dan') return {...base, background:'#fee2e2', color:'#991b1b'};
-  return {...base, background:'transparent', color:'#6b7280', border:'1px solid #d1d5db'};
-}
-
-function bdg(v) {
-  const base = {fontSize:'11px', padding:'2px 8px', borderRadius:'6px', fontWeight:500, display:'inline-block'};
-  if (v === 'suc') return {...base, background:'#d1fae5', color:'#065f46'};
-  if (v === 'war') return {...base, background:'#fef3c7', color:'#92400e'};
-  if (v === 'dan') return {...base, background:'#fee2e2', color:'#991b1b'};
-  return {...base, background:'#dbeafe', color:'#1e40af'};
-}
-
-function StatusBadge({status}) {
-  if (status === 'delivered')     return <span style={bdg('suc')}>Terkirim</span>;
-  if (status === 'pending_kirim') return <span style={bdg('war')}>Siap Kirim</span>;
-  if (status === 'cancelled')     return <span style={bdg('dan')}>Dibatalkan</span>;
-  return <span style={bdg('inf')}>Draft</span>;
-}
-
-function Spinner({text='Memuat...'}) {
-  return (
-    <div style={{display:'flex',alignItems:'center',justifyContent:'center',padding:'3rem',gap:'8px',color:'#6b7280',fontSize:'13px'}}>
-      <div style={{width:'16px',height:'16px',border:'2px solid #e5e7eb',borderTopColor:'#3b82f6',borderRadius:'50%',animation:'spin 0.8s linear infinite'}}/>
-      {text}
-      <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
+const C={card:{background:'#fff',border:'1px solid #e5e7eb',borderRadius:'10px',padding:'1rem 1.25rem'},met:{background:'#f9fafb',borderRadius:'8px',padding:'1rem'},th:{padding:'6px 8px',fontWeight:500,color:'#6b7280',fontSize:'12px',textAlign:'left'},td:{padding:'7px 8px',fontSize:'13px',borderBottom:'1px solid #f3f4f6'}};
+function btn(v){const base={padding:'8px 16px',fontSize:'13px',fontWeight:500,borderRadius:'8px',cursor:'pointer',border:'none'};if(v==='suc')return{...base,background:'#d1fae5',color:'#065f46'};if(v==='pri')return{...base,background:'#dbeafe',color:'#1e40af'};if(v==='war')return{...base,background:'#fef3c7',color:'#92400e'};if(v==='dan')return{...base,background:'#fee2e2',color:'#991b1b'};return{...base,background:'transparent',color:'#6b7280',border:'1px solid #d1d5db'};}
+function bdg(v){const base={fontSize:'11px',padding:'2px 8px',borderRadius:'6px',fontWeight:500,display:'inline-block'};if(v==='suc')return{...base,background:'#d1fae5',color:'#065f46'};if(v==='war')return{...base,background:'#fef3c7',color:'#92400e'};if(v==='dan')return{...base,background:'#fee2e2',color:'#991b1b'};return{...base,background:'#dbeafe',color:'#1e40af'};}
+function StatusBadge({status}){if(status==='delivered')return<span style={bdg('suc')}>Terkirim</span>;if(status==='pending_kirim')return<span style={bdg('war')}>Siap Kirim</span>;if(status==='cancelled')return<span style={bdg('dan')}>Dibatalkan</span>;return<span style={bdg('inf')}>Draft</span>;}
+function Spinner({text='Memuat...'}){return(<div style={{display:'flex',alignItems:'center',justifyContent:'center',padding:'3rem',gap:'8px',color:'#6b7280',fontSize:'13px'}}><div style={{width:'16px',height:'16px',border:'2px solid #e5e7eb',borderTopColor:'#3b82f6',borderRadius:'50%',animation:'spin 0.8s linear infinite'}}/>{text}<style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style></div>);}
+function DateNav({value,onChange,label}){
+  const prev=()=>{const d=new Date(value+'T00:00:00');d.setDate(d.getDate()-1);onChange(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`);};
+  const next=()=>{const d=new Date(value+'T00:00:00');d.setDate(d.getDate()+1);onChange(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`);};
+  const today=todayLocal();
+  return(<div style={{...C.card,marginBottom:'1rem',display:'flex',alignItems:'center',justifyContent:'space-between',gap:'8px'}}>
+    <button onClick={prev} style={{...btn(),padding:'6px 12px',fontSize:'16px'}}>‹</button>
+    <div style={{display:'flex',alignItems:'center',gap:'8px',flex:1,justifyContent:'center'}}>
+      {label&&<span style={{fontSize:'12px',color:'#6b7280'}}>{label}</span>}
+      <input type="date" value={value} onChange={e=>onChange(e.target.value)} style={{fontSize:'13px'}}/>
+      {value===today&&<span style={{...bdg('suc'),fontSize:'10px'}}>Hari ini</span>}
+      {value!==today&&<button onClick={()=>onChange(today)} style={{fontSize:'11px',color:'#1e40af',background:'none',border:'none',cursor:'pointer',textDecoration:'underline'}}>Hari ini</button>}
     </div>
-  );
+    <button onClick={next} style={{...btn(),padding:'6px 12px',fontSize:'16px'}}>›</button>
+  </div>);
 }
 
-// =============================================
-// LOGIN
-// =============================================
-function Login({onLogin}) {
-  const [u, setU] = useState('');
-  const [p, setP] = useState('');
-  const [err, setErr] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [showPass, setShowPass] = useState(false);
-
-  const handle = async () => {
-    if (!u || !p) { setErr('Isi username dan password'); return; }
-    setLoading(true); setErr('');
-    try {
-      const res = await api.get('login', {username: u, password: p});
-      if (res.success) onLogin(res.user);
-      else setErr(res.message || 'Username atau password salah');
-    } catch(e) { setErr('Tidak bisa terhubung. Cek koneksi internet.'); }
-    setLoading(false);
-  };
-
-  return (
-    <div style={{minHeight:'100vh',display:'flex',alignItems:'center',justifyContent:'center',background:'#f3f4f6'}}>
-      <div style={{...C.card, width:'100%', maxWidth:'340px', padding:'2rem'}}>
-        <div style={{textAlign:'center', marginBottom:'2rem'}}>
-          <div style={{width:'50px',height:'50px',borderRadius:'50%',background:'#d1fae5',color:'#065f46',display:'flex',alignItems:'center',justifyContent:'center',margin:'0 auto 10px',fontSize:'20px',fontWeight:700}}>K</div>
-          <div style={{fontSize:'11px',color:'#9ca3af',marginBottom:'4px'}}>KOPERASI INSAN SINERGI SEJAHTERA</div>
-          <div style={{fontSize:'17px',fontWeight:500}}>Sistem Manajemen Bahan</div>
-        </div>
-        <div style={{marginBottom:'12px'}}>
-          <label style={{fontSize:'12px',color:'#6b7280',display:'block',marginBottom:'4px'}}>Username</label>
-          <input value={u} onChange={e=>setU(e.target.value)} placeholder="Masukkan username" style={{width:'100%',boxSizing:'border-box'}}/>
-        </div>
-        <div style={{marginBottom:'16px'}}>
-          <label style={{fontSize:'12px',color:'#6b7280',display:'block',marginBottom:'4px'}}>Password</label>
-          <div style={{position:'relative'}}>
-            <input type={showPass?'text':'password'} value={p} onChange={e=>setP(e.target.value)} onKeyDown={e=>e.key==='Enter'&&handle()} placeholder="Password" style={{width:'100%',boxSizing:'border-box',paddingRight:'40px'}}/>
-            <button onClick={()=>setShowPass(x=>!x)} style={{position:'absolute',right:'8px',top:'50%',transform:'translateY(-50%)',background:'none',border:'none',cursor:'pointer',fontSize:'14px',color:'#9ca3af',padding:'0'}}>
-              {showPass ? '🙈' : '👁️'}
-            </button>
-          </div>
-        </div>
-        {err && <div style={{fontSize:'12px',color:'#991b1b',padding:'8px',background:'#fee2e2',borderRadius:'6px',marginBottom:'12px'}}>{err}</div>}
-        <button onClick={handle} disabled={loading} style={{...btn('suc'),width:'100%',padding:'10px',fontSize:'14px',opacity:loading?0.6:1}}>
-          {loading ? 'Masuk...' : 'Masuk'}
-        </button>
-      </div>
-    </div>
-  );
+// ---- LOGIN ----
+function Login({onLogin}){
+  const[u,setU]=useState('');const[p,setP]=useState('');const[err,setErr]=useState('');const[loading,setLoading]=useState(false);const[showPass,setShowPass]=useState(false);
+  const handle=async()=>{if(!u||!p){setErr('Isi username dan password');return;}setLoading(true);setErr('');try{const res=await api.get('login',{username:u,password:p});if(res.success)onLogin(res.user);else setErr(res.message||'Salah');}catch(e){setErr('Tidak bisa terhubung.');}setLoading(false);};
+  return(<div style={{minHeight:'100vh',display:'flex',alignItems:'center',justifyContent:'center',background:'#f3f4f6'}}><div style={{...C.card,width:'100%',maxWidth:'340px',padding:'2rem'}}>
+    <div style={{textAlign:'center',marginBottom:'2rem'}}><div style={{width:'50px',height:'50px',borderRadius:'50%',background:'#d1fae5',color:'#065f46',display:'flex',alignItems:'center',justifyContent:'center',margin:'0 auto 10px',fontSize:'20px',fontWeight:700}}>K</div><div style={{fontSize:'11px',color:'#9ca3af',marginBottom:'4px'}}>KOPERASI INSAN SINERGI SEJAHTERA</div><div style={{fontSize:'17px',fontWeight:500}}>Sistem Manajemen Bahan</div></div>
+    <div style={{marginBottom:'12px'}}><label style={{fontSize:'12px',color:'#6b7280',display:'block',marginBottom:'4px'}}>Username</label><input value={u} onChange={e=>setU(e.target.value)} placeholder="Masukkan username" style={{width:'100%',boxSizing:'border-box'}}/></div>
+    <div style={{marginBottom:'16px'}}><label style={{fontSize:'12px',color:'#6b7280',display:'block',marginBottom:'4px'}}>Password</label><div style={{position:'relative'}}><input type={showPass?'text':'password'} value={p} onChange={e=>setP(e.target.value)} onKeyDown={e=>e.key==='Enter'&&handle()} placeholder="Password" style={{width:'100%',boxSizing:'border-box',paddingRight:'40px'}}/><button onClick={()=>setShowPass(x=>!x)} style={{position:'absolute',right:'8px',top:'50%',transform:'translateY(-50%)',background:'none',border:'none',cursor:'pointer',fontSize:'14px',color:'#9ca3af',padding:'0'}}>{showPass?'🙈':'👁️'}</button></div></div>
+    {err&&<div style={{fontSize:'12px',color:'#991b1b',padding:'8px',background:'#fee2e2',borderRadius:'6px',marginBottom:'12px'}}>{err}</div>}
+    <button onClick={handle} disabled={loading} style={{...btn('suc'),width:'100%',padding:'10px',fontSize:'14px',opacity:loading?0.6:1}}>{loading?'Masuk...':'Masuk'}</button>
+  </div></div>);
 }
 
-// =============================================
-// SIDEBAR
-// =============================================
-function Sidebar({user, view, setView, onLogout}) {
-  const items = navItems(user.role);
-  const roleLabel = {admin:'Admin',staf_beli:'Staf Pembelian',staf_kirim:'Staf Pengiriman',ceo:'CEO',sekretaris:'Sekretaris'}[user.role] || user.role;
-  return (
-    <div style={{width:'200px',flexShrink:0,background:'#fff',borderRight:'1px solid #e5e7eb',display:'flex',flexDirection:'column',minHeight:'100vh'}}>
-      <div style={{padding:'1rem',borderBottom:'1px solid #e5e7eb',display:'flex',alignItems:'center',gap:'8px'}}>
-        <div style={{width:'28px',height:'28px',borderRadius:'50%',background:'#d1fae5',color:'#065f46',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'12px',fontWeight:700,flexShrink:0}}>K</div>
-        <div><div style={{fontSize:'10px',color:'#9ca3af'}}>Koperasi ISS</div><div style={{fontSize:'12px',fontWeight:500}}>Bahan Dapur</div></div>
-      </div>
-      <div style={{padding:'0.75rem 1rem',borderBottom:'1px solid #e5e7eb'}}>
-        <div style={{fontSize:'13px',fontWeight:500}}>{user.name}</div>
-        <div style={{fontSize:'11px',color:'#9ca3af'}}>{roleLabel}</div>
-      </div>
-      <nav style={{flex:1,padding:'6px'}}>
-        {items.map(it => (
-          <button key={it.id} onClick={()=>setView(it.id)} style={{display:'block',width:'100%',textAlign:'left',padding:'8px 10px',fontSize:'13px',background:view===it.id?'#f9fafb':'transparent',color:view===it.id?'#111':'#6b7280',border:'none',borderRadius:'8px',cursor:'pointer',marginBottom:'1px',fontWeight:view===it.id?500:400}}>
-            {it.label}
-          </button>
-        ))}
-      </nav>
-      <div style={{padding:'6px'}}>
-        <button onClick={onLogout} style={{display:'block',width:'100%',textAlign:'left',padding:'8px 10px',fontSize:'13px',color:'#991b1b',background:'transparent',border:'none',cursor:'pointer',borderRadius:'8px'}}>Keluar</button>
-      </div>
-    </div>
-  );
+// ---- SIDEBAR ----
+function Sidebar({user,view,setView,onLogout}){
+  const items=navItems(user.role);const rl={admin:'Admin',staf_beli:'Staf Pembelian',staf_kirim:'Staf Pengiriman',ceo:'CEO',sekretaris:'Sekretaris'}[user.role]||user.role;
+  return(<div style={{width:'200px',flexShrink:0,background:'#fff',borderRight:'1px solid #e5e7eb',display:'flex',flexDirection:'column',minHeight:'100vh'}}>
+    <div style={{padding:'1rem',borderBottom:'1px solid #e5e7eb',display:'flex',alignItems:'center',gap:'8px'}}><div style={{width:'28px',height:'28px',borderRadius:'50%',background:'#d1fae5',color:'#065f46',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'12px',fontWeight:700,flexShrink:0}}>K</div><div><div style={{fontSize:'10px',color:'#9ca3af'}}>Koperasi ISS</div><div style={{fontSize:'12px',fontWeight:500}}>Bahan Dapur</div></div></div>
+    <div style={{padding:'0.75rem 1rem',borderBottom:'1px solid #e5e7eb'}}><div style={{fontSize:'13px',fontWeight:500}}>{user.name}</div><div style={{fontSize:'11px',color:'#9ca3af'}}>{rl}</div></div>
+    <nav style={{flex:1,padding:'6px'}}>{items.map(it=>(<button key={it.id} onClick={()=>setView(it.id)} style={{display:'block',width:'100%',textAlign:'left',padding:'8px 10px',fontSize:'13px',background:view===it.id?'#f9fafb':'transparent',color:view===it.id?'#111':'#6b7280',border:'none',borderRadius:'8px',cursor:'pointer',marginBottom:'1px',fontWeight:view===it.id?500:400}}>{it.label}</button>))}</nav>
+    <div style={{padding:'6px'}}><button onClick={onLogout} style={{display:'block',width:'100%',textAlign:'left',padding:'8px 10px',fontSize:'13px',color:'#991b1b',background:'transparent',border:'none',cursor:'pointer',borderRadius:'8px'}}>Keluar</button></div>
+  </div>);
 }
 
-// =============================================
-// DASHBOARD
-// =============================================
-function Dashboard({orders, loading, error, onRefresh, onCancelOrder, isAdmin}) {
-  const [confirmId, setConfirmId] = useState(null);
-  const tj = orders.reduce((s,o)=>s+o.items.reduce((ss,i)=>ss+i.qty*i.harga_jual,0),0);
-  const tb = orders.reduce((s,o)=>s+o.items.reduce((ss,i)=>ss+i.qty*i.harga_beli,0),0);
-  const confirmOrder = orders.find(o=>o.id===confirmId);
-  const confirmDapur = DAPUR.find(d=>d.id===confirmOrder?.dapur_id);
-
-  return (
-    <div style={{padding:'1.5rem'}}>
-      {confirmId && (
-        <div style={{position:'fixed',top:0,left:0,right:0,bottom:0,background:'rgba(0,0,0,0.4)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:1000}}>
-          <div style={{background:'#fff',borderRadius:'12px',padding:'1.5rem',maxWidth:'360px',width:'90%'}}>
-            <div style={{fontSize:'30px',textAlign:'center',marginBottom:'10px'}}>⚠️</div>
-            <div style={{fontSize:'15px',fontWeight:600,textAlign:'center',marginBottom:'8px'}}>Batalkan Order?</div>
-            <div style={{fontSize:'13px',color:'#6b7280',textAlign:'center',marginBottom:'1.5rem',lineHeight:1.6}}>
-              Order <strong>{confirmDapur?.nama}</strong> tgl <strong>{confirmOrder?.tanggal_kirim}</strong> akan dibatalkan.
-            </div>
-            <div style={{display:'flex',gap:'8px'}}>
-              <button onClick={()=>setConfirmId(null)} style={{...btn(),flex:1,padding:'9px'}}>Batal</button>
-              <button onClick={()=>{onCancelOrder(confirmId);setConfirmId(null);}} style={{...btn('dan'),flex:1,padding:'9px',fontWeight:600}}>Ya, Batalkan</button>
-            </div>
-          </div>
-        </div>
-      )}
-      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'1.5rem'}}>
-        <h2>Dashboard</h2>
-        <button onClick={onRefresh} style={{...btn(),padding:'6px 14px',fontSize:'12px'}}>↻ Refresh</button>
-      </div>
-      {error && <div style={{padding:'1rem',background:'#fee2e2',borderRadius:'8px',color:'#991b1b',fontSize:'13px',marginBottom:'1rem'}}>Gagal memuat: {error}</div>}
-      {loading ? <Spinner/> : <>
-        <div style={{display:'grid',gridTemplateColumns:'repeat(4,minmax(0,1fr))',gap:'10px',marginBottom:'1.5rem'}}>
-          {[{l:'Total Order',v:orders.length+' order'},{l:'Total Penjualan',v:fRp(tj)},{l:'Total Pembelian',v:fRp(tb)},{l:'Profit',v:fRp(tj-tb)}].map(c=>(
-            <div key={c.l} style={C.met}><div style={{fontSize:'11px',color:'#6b7280',marginBottom:'4px'}}>{c.l}</div><div style={{fontSize:'16px',fontWeight:500}}>{c.v}</div></div>
-          ))}
-        </div>
-        <div style={C.card}>
-          <div style={{fontSize:'14px',fontWeight:500,marginBottom:'12px'}}>Semua Order</div>
-          <div style={{overflowX:'auto'}}>
-            <table style={{width:'100%'}}>
-              <thead><tr style={{borderBottom:'1px solid #e5e7eb'}}>
-                {['Dapur','Tgl Order','Tgl Kirim','Item','Nilai Jual','Status',isAdmin?'Aksi':''].map((h,i)=>(
-                  <th key={i} style={{...C.th,textAlign:i===4?'right':'left'}}>{h}</th>
-                ))}
-              </tr></thead>
-              <tbody>
-                {orders.map(o=>{
-                  const d = DAPUR.find(x=>x.id===o.dapur_id);
-                  const n = o.items.reduce((s,i)=>s+i.qty*i.harga_jual,0);
-                  const canCancel = isAdmin && o.status!=='delivered' && o.status!=='cancelled';
-                  return (
-                    <tr key={o.id} style={{opacity:o.status==='cancelled'?0.45:1}}>
-                      <td style={C.td}>{d?.nama}</td>
-                      <td style={{...C.td,color:'#6b7280'}}>{normDate(o.tanggal_order)}</td>
-                      <td style={{...C.td,color:'#6b7280'}}>{normDate(o.tanggal_kirim)}</td>
-                      <td style={{...C.td,color:'#6b7280'}}>{o.items.length} item</td>
-                      <td style={{...C.td,textAlign:'right',textDecoration:o.status==='cancelled'?'line-through':''}}>{fRp(n)}</td>
-                      <td style={C.td}><StatusBadge status={o.status}/></td>
-                      {isAdmin && <td style={C.td}>{canCancel && <button onClick={()=>setConfirmId(o.id)} style={{...btn('dan'),padding:'4px 10px',fontSize:'11px'}}>Batalkan</button>}</td>}
-                    </tr>
-                  );
-                })}
-                {!orders.length && <tr><td colSpan={7} style={{...C.td,textAlign:'center',color:'#9ca3af'}}>Belum ada order</td></tr>}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </>}
-    </div>
-  );
-}
-
-// =============================================
-// INPUT ORDER
-// =============================================
-function InputOrder({onOrderAdded, setView}) {
-  const [step, setStep] = useState(1);
-  const [selDapur, setSelDapur] = useState('');
-  const [rabText, setRabText] = useState('');
-  const [items, setItems] = useState([]);
-  const [tO, setTO] = useState(todayLocal());
-  const [tK, setTK] = useState(nextDay(todayLocal()));
-  const [err, setErr] = useState('');
-  const [saving, setSaving] = useState(false);
-
-  const handleParse = () => {
-    const it = parseRAB(rabText);
-    if (!it.length) { setErr('Format tidak dikenali. Pastikan copy langsung dari spreadsheet (tab-separated).'); return; }
-    setErr(''); setItems(it); setStep(3);
-  };
-
-  const updItem = (idx, f, v) => setItems(p=>p.map((it,i)=>i===idx?{...it,[f]:f==='qty'?parseFloat(v)||0:parseInt(v)||0}:it));
-
-  const handleSubmit = async () => {
-    setSaving(true);
-    const order = {id:'ord-'+Date.now(), dapur_id:selDapur, tanggal_order:tO, tanggal_kirim:tK, status:'draft', items};
-    try {
-      const res = await api.post({action:'addOrder', order});
-      if (res.success) { onOrderAdded(order); alert('Order berhasil disimpan!'); setView('dashboard'); }
-      else alert('Gagal: '+(res.error||''));
-    } catch(e) { alert('Koneksi bermasalah'); }
-    setSaving(false);
-  };
-
-  const totalJual = items.reduce((s,i)=>s+i.qty*i.harga_jual, 0);
-  const steps = ['Pilih Dapur','Paste RAB','Review & Submit'];
-
-  return (
-    <div style={{padding:'1.5rem',maxWidth:'820px'}}>
-      <h2 style={{marginBottom:'1rem'}}>Input Order Baru</h2>
-      <div style={{display:'flex',alignItems:'center',gap:'8px',marginBottom:'1.5rem'}}>
-        {steps.map((s,i)=>(
-          <div key={i} style={{display:'flex',alignItems:'center',gap:'6px'}}>
-            <div style={{width:'22px',height:'22px',borderRadius:'50%',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'11px',fontWeight:600,background:step>i+1?'#d1fae5':step===i+1?'#dbeafe':'#f3f4f6',color:step>i+1?'#065f46':step===i+1?'#1e40af':'#9ca3af'}}>{step>i+1?'✓':i+1}</div>
-            <span style={{fontSize:'12px',color:step===i+1?'#111':'#9ca3af'}}>{s}</span>
-            {i<2 && <span style={{color:'#9ca3af'}}>›</span>}
-          </div>
-        ))}
-      </div>
-      <div style={C.card}>
-        {step===1 && (
-          <div>
-            <div style={{display:'flex',gap:'16px',marginBottom:'1rem'}}>
-              <div><label style={{fontSize:'12px',color:'#6b7280',display:'block',marginBottom:'4px'}}>Tanggal Order</label><input type="date" value={tO} onChange={e=>{setTO(e.target.value);setTK(nextDay(e.target.value));}}/></div>
-              <div><label style={{fontSize:'12px',color:'#6b7280',display:'block',marginBottom:'4px'}}>Tanggal Kirim</label><input type="date" value={tK} onChange={e=>setTK(e.target.value)}/></div>
-            </div>
-            <div style={{fontSize:'12px',color:'#6b7280',marginBottom:'8px'}}>Pilih Dapur</div>
-            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'8px',marginBottom:'1.25rem'}}>
-              {DAPUR.map(d=>(
-                <button key={d.id} onClick={()=>setSelDapur(d.id)} style={{padding:'12px',textAlign:'left',background:selDapur===d.id?'#dbeafe':'#f9fafb',border:selDapur===d.id?'1.5px solid #93c5fd':'1px solid #e5e7eb',borderRadius:'8px',cursor:'pointer'}}>
-                  <div style={{fontSize:'14px',fontWeight:500,color:selDapur===d.id?'#1e40af':'#111'}}>{d.nama}</div>
-                  <div style={{fontSize:'12px',color:'#6b7280',marginTop:'2px'}}>{d.pic}</div>
-                </button>
-              ))}
-            </div>
-            <button disabled={!selDapur} onClick={()=>setStep(2)} style={{...btn('pri'),opacity:selDapur?1:0.4}}>Lanjut →</button>
-          </div>
-        )}
-        {step===2 && (
-          <div>
-            <div style={{fontSize:'13px',marginBottom:'12px'}}>Dapur: <strong>{DAPUR.find(d=>d.id===selDapur)?.nama}</strong></div>
-            <div style={{fontSize:'11px',padding:'8px',background:'#f9fafb',borderRadius:'6px',marginBottom:'8px',color:'#6b7280',fontFamily:'monospace'}}>Format: Bahan [Tab] Banyak [Tab] Satuan [Tab] Harga — copy dari spreadsheet</div>
-            <textarea value={rabText} onChange={e=>setRabText(e.target.value)} placeholder={"Beras Premium\t100.8\tKg\tRp15,000\nAyam Broiler\t200\tKg\tRp35,000"} style={{width:'100%',minHeight:'200px',fontFamily:'monospace',fontSize:'12px',resize:'vertical',boxSizing:'border-box'}}/>
-            {err && <div style={{color:'#991b1b',fontSize:'12px',marginTop:'6px',padding:'8px',background:'#fee2e2',borderRadius:'6px'}}>{err}</div>}
-            <div style={{display:'flex',gap:'8px',marginTop:'12px'}}>
-              <button onClick={()=>setStep(1)} style={btn()}>← Kembali</button>
-              <button disabled={!rabText.trim()} onClick={handleParse} style={{...btn('pri'),opacity:rabText.trim()?1:0.4}}>Parse & Review →</button>
-            </div>
-          </div>
-        )}
-        {step===3 && (
-          <div>
-            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'12px'}}>
-              <div style={{fontSize:'13px'}}>Dapur: <strong>{DAPUR.find(d=>d.id===selDapur)?.nama}</strong> · Kirim: <strong>{tK}</strong></div>
-              <div style={{fontSize:'12px',color:'#6b7280'}}>{items.length} item</div>
-            </div>
-            <div style={{overflowX:'auto'}}>
-              <table style={{width:'100%',fontSize:'13px'}}>
-                <thead><tr style={{borderBottom:'1px solid #e5e7eb'}}>
-                  {['Bahan','Qty','Sat','Harga Jual/Sat','Subtotal',''].map((h,i)=><th key={i} style={{...C.th,textAlign:i>=3&&i<5?'right':'left'}}>{h}</th>)}
-                </tr></thead>
-                <tbody>
-                  {items.map((it,idx)=>(
-                    <tr key={idx} style={{borderBottom:'1px solid #f3f4f6'}}>
-                      <td style={{padding:'6px 4px'}}>{it.nama}</td>
-                      <td style={{padding:'6px 4px'}}><input type="number" value={it.qty} onChange={e=>updItem(idx,'qty',e.target.value)} style={{width:'65px',textAlign:'right',padding:'4px',fontSize:'12px'}}/></td>
-                      <td style={{padding:'6px 4px',color:'#6b7280',fontSize:'12px'}}>{it.satuan}</td>
-                      <td style={{padding:'6px 4px',textAlign:'right'}}><input type="number" value={it.harga_jual} onChange={e=>updItem(idx,'harga_jual',e.target.value)} style={{width:'100px',textAlign:'right',padding:'4px',fontSize:'12px'}}/></td>
-                      <td style={{padding:'6px 4px',textAlign:'right',fontWeight:500}}>{fRp(it.qty*it.harga_jual)}</td>
-                      <td style={{padding:'6px 4px'}}><button onClick={()=>setItems(p=>p.filter((_,i)=>i!==idx))} style={{fontSize:'14px',color:'#991b1b',background:'none',border:'none',cursor:'pointer',padding:'0 4px'}}>×</button></td>
-                    </tr>
-                  ))}
-                </tbody>
-                <tfoot><tr style={{borderTop:'1px solid #d1d5db'}}>
-                  <td colSpan={4} style={{padding:'8px 4px',textAlign:'right',fontWeight:500}}>Total Penjualan:</td>
-                  <td style={{padding:'8px 4px',textAlign:'right',fontWeight:600,fontSize:'14px'}}>{fRp(totalJual)}</td>
-                  <td></td>
-                </tr></tfoot>
-              </table>
-            </div>
-            <div style={{display:'flex',gap:'8px',marginTop:'1rem'}}>
-              <button onClick={()=>setStep(2)} style={btn()}>← Kembali</button>
-              <button onClick={handleSubmit} disabled={saving} style={{...btn('suc'),opacity:saving?0.6:1}}>{saving?'Menyimpan...':'Simpan Order ✓'}</button>
-            </div>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-// =============================================
-// REKAP & TUGAS BELI
-// =============================================
-function RekapBeli({orders, tugasBeli, stafBeli, allUsers, onTugasSaved}) {
-  const [sd, setSd]    = useState(todayLocal());
-  const [asgn, setAsgn] = useState({});
-  const [saving, setSaving] = useState(false);
-  const [tab, setTab]  = useState('bagi');
-
-  const ri = useMemo(()=>{
-    const ro = orders.filter(o=>(o.status==='draft'||o.status==='pending_kirim') && normDate(o.tanggal_kirim)===sd);
-    const m = {};
-    for (const o of ro) for (const it of o.items) {
-      const k = (it.nama||it.nama_bahan)+'|'+it.satuan;
-      const nama = it.nama||it.nama_bahan;
-      if (!m[k]) m[k] = {nama, satuan:it.satuan, total:0, ords:[]};
-      m[k].total += it.qty;
-      m[k].ords.push({dapur: DAPUR.find(d=>d.id===o.dapur_id)?.nama, qty:it.qty});
-    }
-    return Object.values(m).sort((a,b)=>a.nama.localeCompare(b.nama));
-  }, [orders, sd]);
-
-  const tugasHariIni = tugasBeli.filter(t => normDate(t.tanggal) === sd);
-  const totalT  = tugasHariIni.length;
-  const sudahBeli = tugasHariIni.filter(t=>t.status==='bought'||t.status==='done').length;
-  const hargaOk = tugasHariIni.filter(t=>t.status==='done').length;
-  const belum   = totalT - sudahBeli;
-
-  const getNama = (stafId) => {
-    const u = (allUsers||[]).find(x=>x.username===stafId||x.id===stafId);
-    return u ? u.name : stafId;
-  };
-
-  // Multi-staff helpers
-  const getAssignments = (nama) => asgn[nama] || [];
-  const addAssignment = (nama, total) => {
-    setAsgn(p => {
-      const cur = p[nama] || [];
-      const used = cur.reduce((s,a)=>s+(parseFloat(a.qty)||0),0);
-      const remaining = total - used;
-      return {...p, [nama]: [...cur, {staf:'', qty: remaining > 0 ? remaining : 0}]};
-    });
-  };
-  const removeAssignment = (nama, idx) => {
-    setAsgn(p => ({...p, [nama]: (p[nama]||[]).filter((_,i)=>i!==idx)}));
-  };
-  const updateAssignment = (nama, idx, field, value) => {
-    setAsgn(p => ({...p, [nama]: (p[nama]||[]).map((a,i)=>i===idx?{...a,[field]:value}:a)}));
-  };
-
-  const handleSave = async () => {
-    const tugas = [];
-    for (const it of ri) {
-      const assignments = getAssignments(it.nama);
-      for (const a of assignments) {
-        if (!a.staf) continue;
-        tugas.push({
-          id:'tgs-'+Date.now()+'-'+Math.random().toString(36).slice(2,7),
-          tanggal: sd,
-          staf_id: a.staf,
-          nama_bahan: it.nama,
-          qty: parseFloat(a.qty)||0,
-          satuan: it.satuan,
-          harga_beli: 0,
-          status: 'pending'
-        });
-      }
-    }
-    if (!tugas.length) { alert('Pilih staf untuk minimal satu item'); return; }
-    setSaving(true);
-    try {
-      const res = await api.post({action:'saveTugasBeli', tugas, tanggal:sd});
-      if (res.success) { onTugasSaved(tugas, sd); alert('Tugas tersimpan! '+tugas.length+' penugasan.'); }
-      else alert('Gagal: '+(res.error||''));
-    } catch(e) { alert('Koneksi bermasalah'); }
-    setSaving(false);
-  };
-
-  const handleWA = () => {
-    const lines = ['*Tugas Beli Bahan - '+sd+'*', ''];
-    const byStaf = {};
-    for (const it of ri) {
-      const assignments = getAssignments(it.nama);
-      for (const a of assignments) {
-        if (!a.staf) continue;
-        const sn = stafBeli.find(s=>s.id===a.staf)?.nama || a.staf;
-        if (!byStaf[sn]) byStaf[sn] = [];
-        byStaf[sn].push(`• ${it.nama}: ${parseFloat(a.qty)||it.total} ${it.satuan}`);
-      }
-    }
-    for (const [sn, its] of Object.entries(byStaf)) { lines.push(`*${sn}:*`); its.forEach(x=>lines.push(x)); lines.push(''); }
-    if (navigator.clipboard) navigator.clipboard.writeText(lines.join('\n')).then(()=>alert('Teks WA disalin!'));
-  };
-
-  const tsIcon = (s) => {
-    if (s==='done')   return <span style={bdg('suc')}>Harga ✓</span>;
-    if (s==='bought') return <span style={bdg('war')}>Sudah beli</span>;
-    return <span style={{...bdg('inf'),background:'#f3f4f6',color:'#6b7280'}}>Belum</span>;
-  };
-
-  return (
-    <div style={{padding:'1.5rem',maxWidth:'980px'}}>
-      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'1rem'}}>
-        <h2>Rekap &amp; Tugas Beli</h2>
-        <div style={{display:'flex',gap:'8px',alignItems:'center'}}>
-          <label style={{fontSize:'12px',color:'#6b7280'}}>Tgl Kirim:</label>
-          <input type="date" value={sd} onChange={e=>setSd(e.target.value)}/>
-        </div>
-      </div>
-
-      {totalT > 0 && (
-        <div style={{...C.card, marginBottom:'1rem', border:belum>0?'1px solid #fde68a':'1px solid #a7f3d0', background:belum>0?'#fffbeb':'#f0fdf4'}}>
-          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'6px'}}>
-            <div style={{fontSize:'13px',fontWeight:500,color:belum>0?'#92400e':'#065f46'}}>
-              {belum>0 ? `⚠️ ${belum} item belum dibeli` : '✅ Semua item sudah dibeli!'}
-            </div>
-            <div style={{fontSize:'12px',color:'#6b7280'}}>{hargaOk}/{totalT} harga terisi</div>
-          </div>
-          <div style={{height:'6px',background:'#e5e7eb',borderRadius:'3px',overflow:'hidden'}}>
-            <div style={{height:'100%',background:'#065f46',borderRadius:'3px',width:`${totalT>0?(hargaOk/totalT)*100:0}%`}}/>
-          </div>
-        </div>
-      )}
-
-      <div style={{display:'flex',gap:'4px',marginBottom:'1rem',borderBottom:'1px solid #e5e7eb'}}>
-        {[['bagi','Bagi Tugas'],['monitor','Monitor Status']].map(([id,lbl])=>(
-          <button key={id} onClick={()=>setTab(id)} style={{padding:'8px 16px',fontSize:'13px',fontWeight:tab===id?500:400,border:'none',background:'transparent',cursor:'pointer',borderBottom:tab===id?'2px solid #1e40af':'2px solid transparent',color:tab===id?'#1e40af':'#6b7280',marginBottom:'-1px'}}>
-            {lbl}{id==='monitor'&&belum>0&&<span style={{...bdg('war'),fontSize:'10px',marginLeft:'4px',padding:'1px 6px'}}>{belum}</span>}
-          </button>
-        ))}
-      </div>
-
-      {tab==='bagi' && (
-        !ri.length ? (
-          <div style={{...C.met,padding:'2rem',textAlign:'center',color:'#6b7280'}}>Tidak ada order aktif untuk tanggal {sd}</div>
-        ) : (
-          <>
-            <div style={{display:'flex',flexDirection:'column',gap:'10px'}}>
-              {ri.map(it=>{
-                const assignments = getAssignments(it.nama);
-                const usedQty = assignments.reduce((s,a)=>s+(parseFloat(a.qty)||0),0);
-                const remaining = it.total - usedQty;
-                return (
-                  <div key={it.nama} style={{...C.card,border:'1px solid #e5e7eb'}}>
-                    <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:'8px'}}>
-                      <div>
-                        <div style={{fontWeight:600,fontSize:'14px'}}>{it.nama}</div>
-                        <div style={{fontSize:'12px',color:'#6b7280',marginTop:'2px'}}>Total: <strong style={{color:'#1e40af'}}>{it.total} {it.satuan}</strong> · {it.ords.map(o=>`${o.dapur}: ${o.qty}`).join(' · ')}</div>
-                      </div>
-                      <button onClick={()=>addAssignment(it.nama, it.total)} style={{...btn('pri'),padding:'4px 10px',fontSize:'11px',whiteSpace:'nowrap'}}>+ Staf</button>
-                    </div>
-                    {assignments.length > 0 && (
-                      <div style={{display:'flex',flexDirection:'column',gap:'6px'}}>
-                        {assignments.map((a,idx)=>(
-                          <div key={idx} style={{display:'flex',gap:'8px',alignItems:'center',padding:'6px 8px',background:'#f9fafb',borderRadius:'6px'}}>
-                            <select value={a.staf} onChange={e=>updateAssignment(it.nama,idx,'staf',e.target.value)} style={{fontSize:'12px',padding:'5px',flex:'1',minWidth:'100px'}}>
-                              <option value="">— Pilih Staf —</option>
-                              {stafBeli.map(s=><option key={s.id} value={s.id}>{s.nama}</option>)}
-                            </select>
-                            <div style={{display:'flex',alignItems:'center',gap:'4px'}}>
-                              <input type="number" value={a.qty} onChange={e=>updateAssignment(it.nama,idx,'qty',e.target.value)} style={{width:'75px',textAlign:'right',padding:'5px',fontSize:'12px'}}/>
-                              <span style={{fontSize:'11px',color:'#6b7280'}}>{it.satuan}</span>
-                            </div>
-                            <button onClick={()=>removeAssignment(it.nama,idx)} style={{fontSize:'16px',color:'#991b1b',background:'none',border:'none',cursor:'pointer',padding:'0 4px',lineHeight:1}}>×</button>
-                          </div>
-                        ))}
-                        {Math.abs(remaining) > 0.01 && (
-                          <div style={{fontSize:'11px',color:remaining>0?'#92400e':'#991b1b',padding:'2px 8px'}}>
-                            {remaining > 0 ? `⚠️ Sisa ${remaining.toFixed(1)} ${it.satuan} belum ditugaskan` : `⚠️ Kelebihan ${Math.abs(remaining).toFixed(1)} ${it.satuan}`}
-                          </div>
-                        )}
-                      </div>
-                    )}
-                    {assignments.length === 0 && (
-                      <div style={{fontSize:'12px',color:'#9ca3af',fontStyle:'italic'}}>Klik "+ Staf" untuk menugaskan pembelian</div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-            <div style={{display:'flex',gap:'8px',marginTop:'1rem'}}>
-              <button onClick={handleSave} disabled={saving} style={{...btn('suc'),opacity:saving?0.6:1}}>{saving?'Menyimpan...':'Simpan Tugas Beli'}</button>
-              <button onClick={handleWA} style={btn('war')}>Salin Teks WA</button>
-            </div>
-          </>
-        )
-      )}
-
-      {tab==='monitor' && (
-        !tugasHariIni.length ? (
-          <div style={{...C.met,padding:'2rem',textAlign:'center',color:'#6b7280'}}>Belum ada tugas untuk tanggal {sd}.</div>
-        ) : (
-          <div style={C.card}>
-            <div style={{fontSize:'14px',fontWeight:500,marginBottom:'12px'}}>Status Pembelian — {tugasHariIni.length} item</div>
-            <table style={{width:'100%'}}>
-              <thead><tr style={{borderBottom:'1px solid #e5e7eb'}}>
-                {['Staf','Bahan','Qty','Status','Harga Beli'].map((h,i)=>(
-                  <th key={i} style={{...C.th,textAlign:i>=3?'right':'left'}}>{h}</th>
-                ))}
-              </tr></thead>
-              <tbody>
-                {tugasHariIni.map(t=>(
-                  <tr key={t.id} style={{borderBottom:'1px solid #f9fafb'}}>
-                    <td style={{...C.td,fontWeight:500}}>{getNama(t.staf_id)}</td>
-                    <td style={C.td}>{t.nama_bahan}</td>
-                    <td style={{...C.td,color:'#6b7280'}}>{t.qty} {t.satuan}</td>
-                    <td style={{...C.td,textAlign:'right'}}>{tsIcon(t.status)}</td>
-                    <td style={{...C.td,textAlign:'right',fontWeight:500,color:t.status==='done'?'#065f46':'#9ca3af'}}>
-                      {t.status==='done' ? fRp(t.harga_beli) : '—'}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )
-      )}
-    </div>
-  );
-}
-
-// =============================================
-// TUGAS BELI (Staf)
-// =============================================
-function TugasBeli({user, tugasBeli, allUsers, onStatusChanged, onHargaSaved}) {
-  const [hi, setHi]       = useState({});
-  const [saving, setSaving] = useState({});
-  const [konfirm, setKonfirm] = useState({});
-  const [selDate, setSelDate] = useState(todayLocal());
-  const today = todayLocal();
-
-  // Filter tugas berdasarkan tanggal yang dipilih
-  const semuaTugas = tugasBeli.filter(t => normDate(t.tanggal) === selDate);
-  const myTugas    = semuaTugas.filter(t => String(t.staf_id) === String(user.u));
-  const otherTugas = semuaTugas.filter(t => String(t.staf_id) !== String(user.u));
-
-  const total  = semuaTugas.length;
-  const bought = semuaTugas.filter(t=>t.status==='bought'||t.status==='done').length;
-  const done   = semuaTugas.filter(t=>t.status==='done').length;
-
-  // Cari tanggal-tanggal yang punya tugas untuk navigasi cepat
-  const availDates = useMemo(()=>{
-    const ds = new Set();
-    tugasBeli.forEach(t=>{ const d=normDate(t.tanggal); if(d) ds.add(d); });
-    return [...ds].sort().reverse();
-  },[tugasBeli]);
-
-  const getNama = (stafId) => {
-    const u = (allUsers||[]).find(x=>x.username===stafId||x.id===stafId);
-    return u ? u.name : stafId;
-  };
-
-  const prevDay = () => {
-    const d = new Date(selDate+'T00:00:00'); d.setDate(d.getDate()-1);
-    setSelDate(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`);
-  };
-  const nextDayNav = () => {
-    const d = new Date(selDate+'T00:00:00'); d.setDate(d.getDate()+1);
-    setSelDate(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`);
-  };
-
-  const handleBeli = async (t) => {
-    setKonfirm(p=>({...p,[t.id]:true}));
-    try {
-      const res = await api.post({action:'updateTugasStatus', tugasId:t.id, status:'bought'});
-      if (res.success) onStatusChanged(t.id, 'bought');
-      else alert('Gagal: '+(res.error||''));
-    } catch(e) { alert('Koneksi bermasalah'); }
-    setKonfirm(p=>({...p,[t.id]:false}));
-  };
-
-  const handleHarga = async (id) => {
-    const h = parseFloat(hi[id])||0;
-    if (h<=0) { alert('Masukkan harga yang valid'); return; }
-    setSaving(p=>({...p,[id]:true}));
-    try {
-      const res = await api.post({action:'updateHargaBeli', tugasId:id, hargaBeli:h});
-      if (res.success) onHargaSaved(id, h);
-      else alert('Gagal: '+(res.error||''));
-    } catch(e) { alert('Koneksi bermasalah'); }
-    setSaving(p=>({...p,[id]:false}));
-  };
-
-  const statusIcon = (s) => {
-    if (s==='done')   return <span style={bdg('suc')}>Selesai ✓</span>;
-    if (s==='bought') return <span style={bdg('war')}>Sudah dibeli</span>;
-    return <span style={bdg('inf')}>Belum beli</span>;
-  };
-
-  return (
-    <div style={{padding:'1.5rem',maxWidth:'720px'}}>
-      <h2 style={{marginBottom:'4px'}}>Tugas Beli</h2>
-      <div style={{fontSize:'13px',color:'#6b7280',marginBottom:'1rem'}}>Halo {user.name}!</div>
-
-      <div style={{...C.card,marginBottom:'1rem',display:'flex',alignItems:'center',justifyContent:'space-between',gap:'8px'}}>
-        <button onClick={prevDay} style={{...btn(),padding:'6px 12px',fontSize:'16px'}}>‹</button>
-        <div style={{display:'flex',alignItems:'center',gap:'8px',flex:1,justifyContent:'center'}}>
-          <input type="date" value={selDate} onChange={e=>setSelDate(e.target.value)} style={{fontSize:'13px'}}/>
-          {selDate===today && <span style={{...bdg('suc'),fontSize:'10px'}}>Hari ini</span>}
-          {selDate!==today && <button onClick={()=>setSelDate(today)} style={{fontSize:'11px',color:'#1e40af',background:'none',border:'none',cursor:'pointer',textDecoration:'underline'}}>Hari ini</button>}
-        </div>
-        <button onClick={nextDayNav} style={{...btn(),padding:'6px 12px',fontSize:'16px'}}>›</button>
-      </div>
-
-      {availDates.length > 0 && (
-        <div style={{display:'flex',gap:'4px',flexWrap:'wrap',marginBottom:'1rem'}}>
-          {availDates.slice(0,7).map(d=>(
-            <button key={d} onClick={()=>setSelDate(d)} style={{padding:'3px 8px',fontSize:'11px',borderRadius:'12px',border:d===selDate?'1.5px solid #3b82f6':'1px solid #e5e7eb',background:d===selDate?'#dbeafe':'#fff',color:d===selDate?'#1e40af':'#6b7280',cursor:'pointer'}}>
-              {d===today?'Hari ini':d.slice(5)}
-              {tugasBeli.filter(t=>normDate(t.tanggal)===d&&String(t.staf_id)===String(user.u)&&t.status!=='done').length > 0 && <span style={{color:'#dc2626'}}> •</span>}
-            </button>
-          ))}
-        </div>
-      )}
-
-      {total > 0 && (
-        <div style={{...C.card,marginBottom:'1rem'}}>
-          <div style={{display:'flex',justifyContent:'space-between',marginBottom:'6px'}}>
-            <span style={{fontSize:'13px',fontWeight:500}}>Progress {selDate===today?'hari ini':selDate.slice(5)}</span>
-            <span style={{fontSize:'12px',color:'#6b7280'}}>{done}/{total} selesai</span>
-          </div>
-          <div style={{height:'8px',background:'#f3f4f6',borderRadius:'4px',overflow:'hidden',marginBottom:'8px'}}>
-            <div style={{height:'100%',background:'#065f46',borderRadius:'4px',width:`${total>0?(done/total)*100:0}%`}}/>
-          </div>
-          <div style={{display:'flex',gap:'12px',fontSize:'11px',color:'#6b7280'}}>
-            <span>⬜ Belum: {total-bought}</span>
-            <span>🟡 Sudah beli: {bought-done}</span>
-            <span>✅ Harga terisi: {done}</span>
-          </div>
-        </div>
-      )}
-
-      {!myTugas.length ? (
-        <div style={{...C.met,padding:'2rem',textAlign:'center',color:'#6b7280',marginBottom:'1rem'}}>Belum ada tugas untuk tanggal {selDate}.</div>
-      ) : (
-        <>
-          <div style={{fontSize:'13px',fontWeight:500,color:'#374151',marginBottom:'8px'}}>Tugasmu ({myTugas.length} item)</div>
-          <div style={{display:'flex',flexDirection:'column',gap:'8px',marginBottom:'1.5rem'}}>
-            {myTugas.map(t=>(
-              <div key={t.id} style={{...C.card,border:t.status==='done'?'1px solid #a7f3d0':t.status==='bought'?'1px solid #fde68a':'1px solid #e5e7eb'}}>
-                <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:t.status==='pending'||t.status==='bought'?'10px':'0'}}>
-                  <div>
-                    <div style={{fontWeight:500,marginBottom:'2px'}}>{t.nama_bahan}</div>
-                    <div style={{fontSize:'12px',color:'#6b7280'}}>{t.qty} {t.satuan}</div>
-                  </div>
-                  {statusIcon(t.status)}
-                </div>
-                {t.status==='pending' && (
-                  <button onClick={()=>handleBeli(t)} disabled={konfirm[t.id]} style={{...btn('pri'),width:'100%',padding:'9px',opacity:konfirm[t.id]?0.6:1}}>
-                    {konfirm[t.id]?'Menyimpan...':'✓ Konfirmasi Sudah Beli di Pasar'}
-                  </button>
-                )}
-                {t.status==='bought' && (
-                  <div style={{display:'flex',gap:'8px',alignItems:'flex-end'}}>
-                    <div style={{flex:1}}>
-                      <label style={{fontSize:'11px',color:'#6b7280',display:'block',marginBottom:'4px'}}>Harga beli per {t.satuan} (Rp):</label>
-                      <input type="number" placeholder="contoh: 32000" value={hi[t.id]||''} onChange={e=>setHi(p=>({...p,[t.id]:e.target.value}))} style={{width:'100%',boxSizing:'border-box'}}/>
-                    </div>
-                    <button onClick={()=>handleHarga(t.id)} disabled={saving[t.id]} style={{...btn('suc'),opacity:saving[t.id]?0.6:1}}>
-                      {saving[t.id]?'...':'Simpan'}
-                    </button>
-                  </div>
-                )}
-                {t.status==='done' && (
-                  <div style={{fontSize:'13px',color:'#065f46',fontWeight:500}}>
-                    Harga beli: {fRp(t.harga_beli)} / {t.satuan}
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-        </>
-      )}
-
-      {otherTugas.length > 0 && (
-        <>
-          <div style={{fontSize:'13px',fontWeight:500,color:'#374151',marginBottom:'8px'}}>Tugas Staf Lain</div>
-          <div style={C.card}>
-            <table style={{width:'100%',fontSize:'13px'}}>
-              <thead><tr style={{borderBottom:'1px solid #f3f4f6'}}>
-                {['Staf','Bahan','Qty','Status','Harga'].map((h,i)=>(
-                  <th key={i} style={{...C.th,textAlign:i>=3?'right':'left'}}>{h}</th>
-                ))}
-              </tr></thead>
-              <tbody>
-                {otherTugas.map(t=>(
-                  <tr key={t.id} style={{borderBottom:'1px solid #f9fafb'}}>
-                    <td style={C.td}>{getNama(t.staf_id)}</td>
-                    <td style={C.td}>{t.nama_bahan}</td>
-                    <td style={{...C.td,color:'#6b7280'}}>{t.qty} {t.satuan}</td>
-                    <td style={{...C.td,textAlign:'right'}}>{statusIcon(t.status)}</td>
-                    <td style={{...C.td,textAlign:'right',color:'#065f46',fontWeight:500}}>{t.status==='done'?fRp(t.harga_beli):'—'}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </>
-      )}
-    </div>
-  );
-}
-
-// =============================================
-// STAF KIRIM
-// =============================================
-function PengirimanView({user, orders, pengiriman, onKonfirmasi}) {
-  const [sel, setSel] = useState(null);
-  const [foto, setFoto] = useState(null);
-  const [notes, setNotes] = useState('');
-  const [saving, setSaving] = useState(false);
-
-  const konfirm = async (pid) => {
-    if (!foto) { alert('Upload foto bukti terlebih dahulu'); return; }
-    setSaving(true);
-    try {
-      const res = await api.post({action:'updatePengiriman', pengirimanId:pid, status:'delivered', catatan:notes});
-      if (res.success) { onKonfirmasi(pid); setSel(null); setFoto(null); setNotes(''); alert('Pengiriman dikonfirmasi!'); }
-      else alert('Gagal: '+(res.error||''));
-    } catch(e) { alert('Koneksi bermasalah'); }
-    setSaving(false);
-  };
-
-  return (
-    <div style={{padding:'1.5rem',maxWidth:'680px'}}>
-      <h2 style={{marginBottom:'4px'}}>Daftar Pengiriman</h2>
-      <div style={{fontSize:'13px',color:'#6b7280',marginBottom:'1.5rem'}}>Halo {user.name}!</div>
-      {sel ? (
-        <div style={C.card}>
-          <div style={{fontWeight:500,fontSize:'15px',marginBottom:'1rem'}}>Konfirmasi: {DAPUR.find(d=>d.id===sel.dapur_id)?.nama}</div>
-          <div style={{marginBottom:'12px'}}>
-            <div style={{fontSize:'12px',color:'#6b7280',marginBottom:'6px'}}>Foto bukti pengiriman *</div>
-            <input type="file" accept="image/*" capture="environment" onChange={e=>setFoto(e.target.files[0]?.name||'foto.jpg')} style={{fontSize:'13px'}}/>
-            {foto && <div style={{fontSize:'12px',color:'#065f46',marginTop:'4px'}}>✓ {foto}</div>}
-          </div>
-          <div style={{marginBottom:'1rem'}}>
-            <div style={{fontSize:'12px',color:'#6b7280',marginBottom:'6px'}}>Catatan (opsional)</div>
-            <textarea value={notes} onChange={e=>setNotes(e.target.value)} placeholder="Catatan kondisi barang..." style={{width:'100%',minHeight:'72px',resize:'vertical',boxSizing:'border-box'}}/>
-          </div>
-          <div style={{display:'flex',gap:'8px'}}>
-            <button onClick={()=>setSel(null)} style={btn()}>Batal</button>
-            <button onClick={()=>konfirm(sel.id)} disabled={!foto||saving} style={{...btn('suc'),opacity:foto&&!saving?1:0.4}}>
-              {saving?'Menyimpan...':'Konfirmasi Terkirim ✓'}
-            </button>
-          </div>
-        </div>
-      ) : (
-        <div style={{display:'flex',flexDirection:'column',gap:'8px'}}>
-          {pengiriman.map(p=>{
-            const o = orders.find(x=>x.id===p.order_id);
-            const d = DAPUR.find(x=>x.id===p.dapur_id);
-            return (
-              <div key={p.id} style={{...C.card,display:'flex',alignItems:'center',gap:'12px'}}>
-                <div style={{flex:1}}>
-                  <div style={{fontWeight:500,marginBottom:'2px'}}>{d?.nama}</div>
-                  <div style={{fontSize:'12px',color:'#6b7280'}}>{d?.alamat}</div>
-                  <div style={{fontSize:'11px',color:'#9ca3af',marginTop:'2px'}}>{o?.items?.length||0} item · {normDate(p.tanggal)}</div>
-                </div>
-                {p.status==='delivered' ? <span style={bdg('suc')}>Terkirim ✓</span> : <button onClick={()=>setSel(p)} style={btn('war')}>Konfirmasi</button>}
-              </div>
-            );
-          })}
-          {!pengiriman.length && <div style={{...C.met,padding:'2rem',textAlign:'center',color:'#6b7280'}}>Tidak ada pengiriman hari ini</div>}
-        </div>
-      )}
-    </div>
-  );
-}
-
-// =============================================
-// SURAT JALAN
-// =============================================
-function SuratJalan({orders}) {
-  const [sel, setSel]   = useState(null);
-  const [print, setPrint] = useState(false);
-
-  if (print && sel) {
-    const o = orders.find(x=>x.id===sel);
-    const d = DAPUR.find(x=>x.id===o?.dapur_id);
-    return (
-      <div style={{padding:'1.5rem',maxWidth:'800px'}}>
-        <div style={{display:'flex',gap:'8px',marginBottom:'1.5rem'}}>
-          <button onClick={()=>setPrint(false)} style={btn()}>← Kembali</button>
-          <button onClick={()=>window.print()} style={btn('pri')}>Cetak / Save PDF</button>
-        </div>
-        <div style={{background:'white',color:'#1a1a1a',border:'1px solid #ddd',borderRadius:'8px',padding:'2rem',fontFamily:'Arial,sans-serif',fontSize:'13px',lineHeight:1.6}}>
-          <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',borderBottom:'2px solid #1a1a1a',paddingBottom:'12px',marginBottom:'16px'}}>
-            <div style={{display:'flex',alignItems:'center',gap:'12px'}}>
-              <div style={{width:'54px',height:'54px',borderRadius:'50%',border:'2px solid #333',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'7px',fontWeight:'bold',textAlign:'center',lineHeight:1.3}}>KOPERASI<br/>INDONESIA</div>
-              <div>
-                <div style={{fontWeight:'bold',fontSize:'15px'}}>KOPERASI KONSUMEN INSAN SINERGI SEJAHTERA</div>
-                <div style={{fontSize:'11px',color:'#555'}}>Nomor AHU-0000368.AH.01.29 Tahun 2025</div>
-                <div style={{fontSize:'11px',color:'#555'}}>Kp. Tenjonagara 02/02, Mekarjaya, Pacet, Kab. Bandung</div>
-              </div>
-            </div>
-            <div style={{width:'50px',height:'50px',borderRadius:'50%',border:'2px solid #333',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'7px',fontWeight:'bold',textAlign:'center',lineHeight:1.3}}>ISS<br/>KOPERASI</div>
-          </div>
-          <div style={{textAlign:'center',fontWeight:'bold',fontSize:'14px',letterSpacing:'2px',marginBottom:'20px'}}>SURAT JALAN PENGIRIMAN BAHAN</div>
-          <table style={{marginBottom:'16px',fontSize:'13px'}}><tbody>
-            <tr><td style={{width:'90px',paddingBottom:'4px',color:'#555'}}>Kepada Yth</td><td></td></tr>
-            <tr><td style={{paddingBottom:'4px',color:'#555'}}>Nama</td><td>: <strong>{d?.pic}</strong>&nbsp;&nbsp;&nbsp;{d?.hp}</td></tr>
-            <tr><td style={{paddingBottom:'4px',color:'#555'}}>Alamat</td><td>: {d?.alamat}</td></tr>
-            <tr><td style={{paddingBottom:'4px',color:'#555'}}>Tanggal</td><td>: {normDate(o?.tanggal_kirim)}</td></tr>
-          </tbody></table>
-          <div style={{marginBottom:'12px',fontSize:'13px'}}>Nama Pengirim : Kosim</div>
-          <table style={{width:'100%',borderCollapse:'collapse',marginBottom:'16px',fontSize:'12px'}}>
-            <thead><tr style={{background:'#f5f5f5'}}>{['No','Barang','Qty','Satuan','Ceklis jika sesuai','Keterangan'].map((h,i)=><th key={i} style={{border:'1px solid #ccc',padding:'6px 8px',textAlign:'center'}}>{h}</th>)}</tr></thead>
-            <tbody>{o?.items?.map((it,i)=>(
-              <tr key={i}>
-                <td style={{border:'1px solid #ccc',padding:'6px 8px',textAlign:'center'}}>{i+1}</td>
-                <td style={{border:'1px solid #ccc',padding:'6px 8px'}}>{it.nama}</td>
-                <td style={{border:'1px solid #ccc',padding:'6px 8px',textAlign:'right'}}>{it.qty.toLocaleString('id-ID')}</td>
-                <td style={{border:'1px solid #ccc',padding:'6px 8px',textAlign:'center'}}>{it.satuan}</td>
-                <td style={{border:'1px solid #ccc',padding:'6px 8px'}}></td>
-                <td style={{border:'1px solid #ccc',padding:'6px 8px'}}></td>
-              </tr>
-            ))}</tbody>
-          </table>
-          <div style={{marginBottom:'20px',fontSize:'12px'}}><strong>NOTES :</strong><br/>Mohon di cek bersama antara pengirim dan penerima bahan baku<br/>Jika ada bahan yang tidak sesuai kuntitas dan kualita mohon segera hubungi admin<br/>WA Admin 085351075661</div>
-          <div style={{display:'flex',justifyContent:'space-between',marginTop:'2rem'}}>
-            <div style={{textAlign:'center',width:'220px'}}>
-              <div style={{marginBottom:'8px',fontSize:'13px'}}>Hormat kami</div>
-              <div style={{height:'56px',border:'1px dashed #ccc',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'10px',color:'#aaa'}}>[Tanda Tangan]</div>
-              <div style={{fontSize:'12px',marginTop:'4px'}}>Koperasi Insan Sinergi Sejahtera</div>
-            </div>
-            <div style={{textAlign:'center',width:'220px'}}>
-              <div style={{marginBottom:'8px',fontSize:'13px'}}>Tanda terima,</div>
-              <div style={{height:'56px'}}></div>
-              <div style={{fontSize:'12px'}}>({Array(44).fill('.').join('')})</div>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div style={{padding:'1.5rem',maxWidth:'680px'}}>
-      <h2 style={{marginBottom:'1.5rem'}}>Surat Jalan</h2>
-      <div style={{display:'flex',flexDirection:'column',gap:'8px'}}>
-        {orders.map(o=>{
-          const d = DAPUR.find(x=>x.id===o.dapur_id);
-          return (
-            <div key={o.id} style={{...C.card,display:'flex',alignItems:'center',gap:'12px'}}>
-              <div style={{flex:1}}>
-                <div style={{fontWeight:500,marginBottom:'2px'}}>{d?.nama}</div>
-                <div style={{fontSize:'12px',color:'#6b7280'}}>{o.items.length} item · Kirim: {normDate(o.tanggal_kirim)}</div>
-              </div>
-              <div style={{display:'flex',gap:'8px',alignItems:'center'}}>
-                <StatusBadge status={o.status}/>
-                <button onClick={()=>{setSel(o.id);setPrint(true);}} style={btn('pri')}>Lihat Surat</button>
-              </div>
-            </div>
-          );
-        })}
-        {!orders.length && <div style={{...C.met,padding:'2rem',textAlign:'center',color:'#6b7280'}}>Belum ada order</div>}
-      </div>
-    </div>
-  );
-}
-
-// =============================================
-// LAPORAN
-// =============================================
-function Laporan({orders}) {
-  const tj = orders.reduce((s,o)=>s+o.items.reduce((ss,i)=>ss+i.qty*i.harga_jual,0),0);
-  const tb = orders.reduce((s,o)=>s+o.items.reduce((ss,i)=>ss+i.qty*i.harga_beli,0),0);
-  const pf = tj - tb;
-  const mg = tj>0?((pf/tj)*100).toFixed(1):0;
-
-  const perDapur = DAPUR.map(d=>{
-    const dos = orders.filter(o=>o.dapur_id===d.id);
-    const j = dos.reduce((s,o)=>s+o.items.reduce((ss,i)=>ss+i.qty*i.harga_jual,0),0);
-    const b = dos.reduce((s,o)=>s+o.items.reduce((ss,i)=>ss+i.qty*i.harga_beli,0),0);
-    return {nama:d.nama, ords:dos.length, j, b, pf:j-b};
-  });
-
-  const im = {};
-  for (const o of orders) for (const it of o.items) {
-    if (!im[it.nama]) im[it.nama] = {nama:it.nama, qty:0, j:0, b:0};
-    im[it.nama].qty += it.qty; im[it.nama].j += it.qty*it.harga_jual; im[it.nama].b += it.qty*it.harga_beli;
-  }
-  const perItem = Object.values(im).map(x=>({...x,pf:x.j-x.b})).sort((a,b)=>b.pf-a.pf);
-
-  return (
-    <div style={{padding:'1.5rem',maxWidth:'960px'}}>
-      <h2 style={{marginBottom:'1.5rem'}}>Laporan Keuangan</h2>
+// ---- DASHBOARD ----
+function Dashboard({orders,loading,error,onRefresh,onCancelOrder,isAdmin}){
+  const[confirmId,setConfirmId]=useState(null);
+  const tj=orders.reduce((s,o)=>s+o.items.reduce((ss,i)=>ss+i.qty*i.harga_jual,0),0);
+  const tb=orders.reduce((s,o)=>s+o.items.reduce((ss,i)=>ss+i.qty*i.harga_beli,0),0);
+  const co=orders.find(o=>o.id===confirmId);const cd=DAPUR.find(d=>d.id===co?.dapur_id);
+  return(<div style={{padding:'1.5rem'}}>
+    {confirmId&&(<div style={{position:'fixed',top:0,left:0,right:0,bottom:0,background:'rgba(0,0,0,0.4)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:1000}}><div style={{background:'#fff',borderRadius:'12px',padding:'1.5rem',maxWidth:'360px',width:'90%'}}><div style={{fontSize:'30px',textAlign:'center',marginBottom:'10px'}}>⚠️</div><div style={{fontSize:'15px',fontWeight:600,textAlign:'center',marginBottom:'8px'}}>Batalkan Order?</div><div style={{fontSize:'13px',color:'#6b7280',textAlign:'center',marginBottom:'1.5rem',lineHeight:1.6}}>Order <strong>{cd?.nama}</strong> tgl <strong>{co?.tanggal_kirim}</strong></div><div style={{display:'flex',gap:'8px'}}><button onClick={()=>setConfirmId(null)} style={{...btn(),flex:1,padding:'9px'}}>Batal</button><button onClick={()=>{onCancelOrder(confirmId);setConfirmId(null);}} style={{...btn('dan'),flex:1,padding:'9px',fontWeight:600}}>Ya, Batalkan</button></div></div></div>)}
+    <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'1.5rem'}}><h2>Dashboard</h2><button onClick={onRefresh} style={{...btn(),padding:'6px 14px',fontSize:'12px'}}>↻ Refresh</button></div>
+    {error&&<div style={{padding:'1rem',background:'#fee2e2',borderRadius:'8px',color:'#991b1b',fontSize:'13px',marginBottom:'1rem'}}>Gagal: {error}</div>}
+    {loading?<Spinner/>:<>
       <div style={{display:'grid',gridTemplateColumns:'repeat(4,minmax(0,1fr))',gap:'10px',marginBottom:'1.5rem'}}>
-        {[{l:'Total Penjualan',v:fRp(tj)},{l:'Total Pembelian',v:fRp(tb)},{l:'Total Profit',v:fRp(pf)},{l:'Margin',v:mg+'%'}].map(c=>(
-          <div key={c.l} style={C.met}><div style={{fontSize:'11px',color:'#6b7280',marginBottom:'4px'}}>{c.l}</div><div style={{fontSize:'16px',fontWeight:500}}>{c.v}</div></div>
-        ))}
+        {[{l:'Total Order',v:orders.length+' order'},{l:'Total Penjualan',v:fRp(tj)},{l:'Total Pembelian',v:fRp(tb)},{l:'Profit',v:fRp(tj-tb)}].map(c=>(<div key={c.l} style={C.met}><div style={{fontSize:'11px',color:'#6b7280',marginBottom:'4px'}}>{c.l}</div><div style={{fontSize:'16px',fontWeight:500}}>{c.v}</div></div>))}
       </div>
-      <div style={{...C.card,marginBottom:'1rem'}}>
-        <div style={{fontSize:'14px',fontWeight:500,marginBottom:'12px'}}>Per Dapur</div>
-        <table style={{width:'100%'}}>
-          <thead><tr style={{borderBottom:'1px solid #e5e7eb'}}>{['Dapur','Order','Penjualan','Pembelian','Profit','Margin'].map((h,i)=><th key={i} style={{...C.th,textAlign:i>=2?'right':'left'}}>{h}</th>)}</tr></thead>
-          <tbody>{perDapur.map(d=>(
-            <tr key={d.nama} style={{borderBottom:'1px solid #f3f4f6'}}>
-              <td style={C.td}>{d.nama}</td><td style={C.td}>{d.ords}</td>
-              <td style={{...C.td,textAlign:'right'}}>{fRp(d.j)}</td>
-              <td style={{...C.td,textAlign:'right'}}>{fRp(d.b)}</td>
-              <td style={{...C.td,textAlign:'right',fontWeight:600,color:d.pf>=0?'#065f46':'#991b1b'}}>{fRp(d.pf)}</td>
-              <td style={{...C.td,textAlign:'right',color:'#6b7280'}}>{d.j>0?((d.pf/d.j)*100).toFixed(1):0}%</td>
-            </tr>
-          ))}</tbody>
-        </table>
-      </div>
-      <div style={C.card}>
-        <div style={{fontSize:'14px',fontWeight:500,marginBottom:'12px'}}>Per Item — profit tertinggi</div>
-        <table style={{width:'100%'}}>
-          <thead><tr style={{borderBottom:'1px solid #e5e7eb'}}>{['Bahan','Qty','Penjualan','Pembelian','Profit'].map((h,i)=><th key={i} style={{...C.th,textAlign:i>=2?'right':'left'}}>{h}</th>)}</tr></thead>
-          <tbody>{perItem.map(it=>(
-            <tr key={it.nama} style={{borderBottom:'1px solid #f3f4f6'}}>
-              <td style={C.td}>{it.nama}</td><td style={C.td}>{it.qty}</td>
-              <td style={{...C.td,textAlign:'right'}}>{fRp(it.j)}</td>
-              <td style={{...C.td,textAlign:'right'}}>{fRp(it.b)}</td>
-              <td style={{...C.td,textAlign:'right',fontWeight:600,color:it.pf>=0?'#065f46':'#991b1b'}}>{fRp(it.pf)}</td>
-            </tr>
-          ))}</tbody>
-        </table>
-      </div>
-    </div>
-  );
+      <div style={C.card}><div style={{fontSize:'14px',fontWeight:500,marginBottom:'12px'}}>Semua Order</div><div style={{overflowX:'auto'}}><table style={{width:'100%'}}><thead><tr style={{borderBottom:'1px solid #e5e7eb'}}>{['Dapur','Tgl Order','Tgl Kirim','Item','Nilai Jual','Status',isAdmin?'Aksi':''].map((h,i)=>(<th key={i} style={{...C.th,textAlign:i===4?'right':'left'}}>{h}</th>))}</tr></thead><tbody>
+        {orders.map(o=>{const d=DAPUR.find(x=>x.id===o.dapur_id);const n=o.items.reduce((s,i)=>s+i.qty*i.harga_jual,0);const cc=isAdmin&&o.status!=='delivered'&&o.status!=='cancelled';return(<tr key={o.id} style={{opacity:o.status==='cancelled'?0.45:1}}><td style={C.td}>{d?.nama}</td><td style={{...C.td,color:'#6b7280'}}>{normDate(o.tanggal_order)}</td><td style={{...C.td,color:'#6b7280'}}>{normDate(o.tanggal_kirim)}</td><td style={{...C.td,color:'#6b7280'}}>{o.items.length} item</td><td style={{...C.td,textAlign:'right',textDecoration:o.status==='cancelled'?'line-through':''}}>{fRp(n)}</td><td style={C.td}><StatusBadge status={o.status}/></td>{isAdmin&&<td style={C.td}>{cc&&<button onClick={()=>setConfirmId(o.id)} style={{...btn('dan'),padding:'4px 10px',fontSize:'11px'}}>Batalkan</button>}</td>}</tr>);})}
+        {!orders.length&&<tr><td colSpan={7} style={{...C.td,textAlign:'center',color:'#9ca3af'}}>Belum ada order</td></tr>}
+      </tbody></table></div></div>
+    </>}
+  </div>);
 }
 
-// =============================================
-// KELOLA AKUN
-// =============================================
-function KelolaAkun({allUsers, onUsersChanged}) {
-  const allowedRoles = ['staf_beli','staf_kirim'];
-  const users = (allUsers||[]).filter(u=>allowedRoles.includes(u.role));
-  const [showForm, setShowForm] = useState(false);
-  const [saving, setSaving]     = useState(false);
-  const [showPassMap, setShowPassMap] = useState({});
-  const [delConfirm, setDelConfirm]   = useState(null);
-  const [deleting, setDeleting]       = useState(false);
-  const [form, setForm] = useState({name:'',username:'',password:'',role:'staf_beli'});
-  const [formErr, setFormErr]   = useState('');
-  const [showNewPass, setShowNewPass] = useState(false);
+// ---- INPUT ORDER ----
+function InputOrder({onOrderAdded,setView}){
+  const[step,setStep]=useState(1);const[selDapur,setSelDapur]=useState('');const[rabText,setRabText]=useState('');const[items,setItems]=useState([]);const[tO,setTO]=useState(todayLocal());const[tK,setTK]=useState(nextDay(todayLocal()));const[err,setErr]=useState('');const[saving,setSaving]=useState(false);
+  const handleParse=()=>{const it=parseRAB(rabText);if(!it.length){setErr('Format tidak dikenali.');return;}setErr('');setItems(it);setStep(3);};
+  const updItem=(idx,f,v)=>setItems(p=>p.map((it,i)=>i===idx?{...it,[f]:f==='qty'?parseFloat(v)||0:parseInt(v)||0}:it));
+  const handleSubmit=async()=>{setSaving(true);const order={id:'ord-'+Date.now(),dapur_id:selDapur,tanggal_order:tO,tanggal_kirim:tK,status:'draft',items};try{const res=await api.post({action:'addOrder',order});if(res.success){onOrderAdded(order);alert('Order berhasil!');setView('dashboard');}else alert('Gagal: '+(res.error||''));}catch(e){alert('Koneksi bermasalah');}setSaving(false);};
+  const totalJual=items.reduce((s,i)=>s+i.qty*i.harga_jual,0);const steps=['Pilih Dapur','Paste RAB','Review & Submit'];
+  return(<div style={{padding:'1.5rem',maxWidth:'820px'}}>
+    <h2 style={{marginBottom:'1rem'}}>Input Order Baru</h2>
+    <div style={{display:'flex',alignItems:'center',gap:'8px',marginBottom:'1.5rem'}}>{steps.map((s,i)=>(<div key={i} style={{display:'flex',alignItems:'center',gap:'6px'}}><div style={{width:'22px',height:'22px',borderRadius:'50%',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'11px',fontWeight:600,background:step>i+1?'#d1fae5':step===i+1?'#dbeafe':'#f3f4f6',color:step>i+1?'#065f46':step===i+1?'#1e40af':'#9ca3af'}}>{step>i+1?'✓':i+1}</div><span style={{fontSize:'12px',color:step===i+1?'#111':'#9ca3af'}}>{s}</span>{i<2&&<span style={{color:'#9ca3af'}}>›</span>}</div>))}</div>
+    <div style={C.card}>
+      {step===1&&(<div>
+        <div style={{display:'flex',gap:'16px',marginBottom:'1rem'}}><div><label style={{fontSize:'12px',color:'#6b7280',display:'block',marginBottom:'4px'}}>Tanggal Order</label><input type="date" value={tO} onChange={e=>{setTO(e.target.value);setTK(nextDay(e.target.value));}}/></div><div><label style={{fontSize:'12px',color:'#6b7280',display:'block',marginBottom:'4px'}}>Tanggal Kirim</label><input type="date" value={tK} onChange={e=>setTK(e.target.value)}/></div></div>
+        <div style={{fontSize:'12px',color:'#6b7280',marginBottom:'8px'}}>Pilih Dapur</div>
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'8px',marginBottom:'1.25rem'}}>{DAPUR.map(d=>(<button key={d.id} onClick={()=>setSelDapur(d.id)} style={{padding:'12px',textAlign:'left',background:selDapur===d.id?'#dbeafe':'#f9fafb',border:selDapur===d.id?'1.5px solid #93c5fd':'1px solid #e5e7eb',borderRadius:'8px',cursor:'pointer'}}><div style={{fontSize:'14px',fontWeight:500,color:selDapur===d.id?'#1e40af':'#111'}}>{d.nama}</div><div style={{fontSize:'12px',color:'#6b7280',marginTop:'2px'}}>{d.pic}</div></button>))}</div>
+        <button disabled={!selDapur} onClick={()=>setStep(2)} style={{...btn('pri'),opacity:selDapur?1:0.4}}>Lanjut →</button>
+      </div>)}
+      {step===2&&(<div>
+        <div style={{fontSize:'13px',marginBottom:'12px'}}>Dapur: <strong>{DAPUR.find(d=>d.id===selDapur)?.nama}</strong></div>
+        <div style={{fontSize:'11px',padding:'8px',background:'#f9fafb',borderRadius:'6px',marginBottom:'8px',color:'#6b7280',fontFamily:'monospace'}}>Format: Bahan [Tab] Banyak [Tab] Satuan [Tab] Harga</div>
+        <textarea value={rabText} onChange={e=>setRabText(e.target.value)} placeholder={"Beras Premium\t100.8\tKg\tRp15,000"} style={{width:'100%',minHeight:'200px',fontFamily:'monospace',fontSize:'12px',resize:'vertical',boxSizing:'border-box'}}/>
+        {err&&<div style={{color:'#991b1b',fontSize:'12px',marginTop:'6px',padding:'8px',background:'#fee2e2',borderRadius:'6px'}}>{err}</div>}
+        <div style={{display:'flex',gap:'8px',marginTop:'12px'}}><button onClick={()=>setStep(1)} style={btn()}>← Kembali</button><button disabled={!rabText.trim()} onClick={handleParse} style={{...btn('pri'),opacity:rabText.trim()?1:0.4}}>Parse & Review →</button></div>
+      </div>)}
+      {step===3&&(<div>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'12px'}}><div style={{fontSize:'13px'}}>Dapur: <strong>{DAPUR.find(d=>d.id===selDapur)?.nama}</strong> · Kirim: <strong>{tK}</strong></div><div style={{fontSize:'12px',color:'#6b7280'}}>{items.length} item</div></div>
+        <div style={{overflowX:'auto'}}><table style={{width:'100%',fontSize:'13px'}}><thead><tr style={{borderBottom:'1px solid #e5e7eb'}}>{['Bahan','Qty','Sat','Harga Jual/Sat','Subtotal',''].map((h,i)=><th key={i} style={{...C.th,textAlign:i>=3&&i<5?'right':'left'}}>{h}</th>)}</tr></thead><tbody>
+          {items.map((it,idx)=>(<tr key={idx} style={{borderBottom:'1px solid #f3f4f6'}}><td style={{padding:'6px 4px'}}>{it.nama}</td><td style={{padding:'6px 4px'}}><input type="number" value={it.qty} onChange={e=>updItem(idx,'qty',e.target.value)} style={{width:'65px',textAlign:'right',padding:'4px',fontSize:'12px'}}/></td><td style={{padding:'6px 4px',color:'#6b7280',fontSize:'12px'}}>{it.satuan}</td><td style={{padding:'6px 4px',textAlign:'right'}}><input type="number" value={it.harga_jual} onChange={e=>updItem(idx,'harga_jual',e.target.value)} style={{width:'100px',textAlign:'right',padding:'4px',fontSize:'12px'}}/></td><td style={{padding:'6px 4px',textAlign:'right',fontWeight:500}}>{fRp(it.qty*it.harga_jual)}</td><td style={{padding:'6px 4px'}}><button onClick={()=>setItems(p=>p.filter((_,i)=>i!==idx))} style={{fontSize:'14px',color:'#991b1b',background:'none',border:'none',cursor:'pointer',padding:'0 4px'}}>×</button></td></tr>))}
+        </tbody><tfoot><tr style={{borderTop:'1px solid #d1d5db'}}><td colSpan={4} style={{padding:'8px 4px',textAlign:'right',fontWeight:500}}>Total:</td><td style={{padding:'8px 4px',textAlign:'right',fontWeight:600,fontSize:'14px'}}>{fRp(totalJual)}</td><td></td></tr></tfoot></table></div>
+        <div style={{display:'flex',gap:'8px',marginTop:'1rem'}}><button onClick={()=>setStep(2)} style={btn()}>← Kembali</button><button onClick={handleSubmit} disabled={saving} style={{...btn('suc'),opacity:saving?0.6:1}}>{saving?'Menyimpan...':'Simpan Order ✓'}</button></div>
+      </div>)}
+    </div>
+  </div>);
+}
 
-  const roleLabel = {staf_beli:'Staf Pembelian',staf_kirim:'Staf Pengiriman'};
-  const roleBg    = {staf_beli:'#d1fae5',staf_kirim:'#fef3c7'};
-  const roleColor = {staf_beli:'#065f46',staf_kirim:'#92400e'};
-
-  const validate = () => {
-    if (!form.name.trim())           return 'Nama wajib diisi';
-    if (!form.username.trim())       return 'Username wajib diisi';
-    if (form.username.includes(' ')) return 'Username tidak boleh ada spasi';
-    if (form.password.length < 4)    return 'Password minimal 4 karakter';
-    if ((allUsers||[]).find(u=>u.username===form.username)) return 'Username sudah dipakai';
-    return '';
+// ---- REKAP & TUGAS BELI (with harga_jual) ----
+function RekapBeli({orders,tugasBeli,stafBeli,allUsers,onTugasSaved}){
+  const[sd,setSd]=useState(todayLocal());const[asgn,setAsgn]=useState({});const[saving,setSaving]=useState(false);const[tab,setTab]=useState('bagi');
+  const ri=useMemo(()=>{
+    const ro=orders.filter(o=>(o.status==='draft'||o.status==='pending_kirim')&&normDate(o.tanggal_kirim)===sd);
+    const m={};
+    for(const o of ro)for(const it of o.items){
+      const nm=it.nama||it.nama_bahan;const k=nm+'|'+it.satuan;
+      if(!m[k])m[k]={nama:nm,satuan:it.satuan,total:0,ords:[],harga_juals:[]};
+      m[k].total+=it.qty;m[k].ords.push({dapur:DAPUR.find(d=>d.id===o.dapur_id)?.nama,qty:it.qty,harga_jual:it.harga_jual});
+      m[k].harga_juals.push(it.harga_jual);
+    }
+    return Object.values(m).map(x=>({...x,harga_jual_min:Math.min(...x.harga_juals),harga_jual_avg:x.harga_juals.reduce((a,b)=>a+b,0)/x.harga_juals.length})).sort((a,b)=>a.nama.localeCompare(b.nama));
+  },[orders,sd]);
+  const tugasHariIni=tugasBeli.filter(t=>normDate(t.tanggal)===sd);
+  const totalT=tugasHariIni.length;const sudahBeli=tugasHariIni.filter(t=>t.status==='bought'||t.status==='done').length;
+  const hargaOk=tugasHariIni.filter(t=>t.status==='done').length;const belum=totalT-sudahBeli;
+  const getNama=(sid)=>{const u=(allUsers||[]).find(x=>x.username===sid||x.id===sid);return u?u.name:sid;};
+  const getAssignments=(nm)=>asgn[nm]||[];
+  const addAssignment=(nm,total)=>{setAsgn(p=>{const cur=p[nm]||[];const used=cur.reduce((s,a)=>s+(parseFloat(a.qty)||0),0);return{...p,[nm]:[...cur,{staf:'',qty:Math.max(0,total-used)}]};});};
+  const removeAssignment=(nm,idx)=>{setAsgn(p=>({...p,[nm]:(p[nm]||[]).filter((_,i)=>i!==idx)}));};
+  const updateAssignment=(nm,idx,f,v)=>{setAsgn(p=>({...p,[nm]:(p[nm]||[]).map((a,i)=>i===idx?{...a,[f]:v}:a)}));};
+  const handleSave=async()=>{
+    const tugas=[];for(const it of ri){for(const a of getAssignments(it.nama)){if(!a.staf)continue;tugas.push({id:'tgs-'+Date.now()+'-'+Math.random().toString(36).slice(2,7),tanggal:sd,staf_id:a.staf,nama_bahan:it.nama,qty:parseFloat(a.qty)||0,satuan:it.satuan,harga_beli:0,status:'pending'});}}
+    if(!tugas.length){alert('Pilih staf untuk minimal satu item');return;}setSaving(true);
+    try{const res=await api.post({action:'saveTugasBeli',tugas,tanggal:sd});if(res.success){onTugasSaved(tugas,sd);alert('Tugas tersimpan! '+tugas.length+' penugasan.');}else alert('Gagal: '+(res.error||''));}catch(e){alert('Koneksi bermasalah');}setSaving(false);
   };
-
-  const handleSave = async () => {
-    const err = validate();
-    if (err) { setFormErr(err); return; }
-    setSaving(true); setFormErr('');
-    try {
-      const newUser = {id:'u-'+Date.now(), ...form};
-      const res = await api.post({action:'addUser', user:newUser});
-      if (res.success) {
-        onUsersChanged(prev=>[...prev, newUser]);
-        setForm({name:'',username:'',password:'',role:'staf_beli'});
-        setShowForm(false); setShowNewPass(false);
-      } else setFormErr(res.error || 'Gagal menyimpan');
-    } catch(e) { setFormErr('Koneksi bermasalah'); }
-    setSaving(false);
-  };
-
-  const handleDelete = async (userId) => {
-    setDeleting(true);
-    try {
-      const res = await api.post({action:'deleteUser', userId});
-      if (res.success) { onUsersChanged(prev=>prev.filter(u=>u.id!==userId)); setDelConfirm(null); }
-      else alert('Gagal: '+(res.error||''));
-    } catch(e) { alert('Koneksi bermasalah'); }
-    setDeleting(false);
-  };
-
-  const delUser = users.find(u=>u.id===delConfirm);
-
-  return (
-    <div style={{padding:'1.5rem',maxWidth:'700px'}}>
-      {delConfirm && (
-        <div style={{position:'fixed',top:0,left:0,right:0,bottom:0,background:'rgba(0,0,0,0.4)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:1000}}>
-          <div style={{background:'#fff',borderRadius:'12px',padding:'1.5rem',maxWidth:'340px',width:'90%'}}>
-            <div style={{fontSize:'28px',textAlign:'center',marginBottom:'10px'}}>🗑️</div>
-            <div style={{fontSize:'15px',fontWeight:600,textAlign:'center',marginBottom:'8px'}}>Hapus Akun?</div>
-            <div style={{fontSize:'13px',color:'#6b7280',textAlign:'center',marginBottom:'1.5rem',lineHeight:1.6}}>
-              Akun <strong>{delUser?.name}</strong> ({delUser?.username}) akan dihapus permanen.
+  const handleWA=()=>{const lines=['*Tugas Beli Bahan - '+sd+'*',''];const byStaf={};for(const it of ri){for(const a of getAssignments(it.nama)){if(!a.staf)continue;const sn=stafBeli.find(s=>s.id===a.staf)?.nama||a.staf;if(!byStaf[sn])byStaf[sn]=[];byStaf[sn].push(`• ${it.nama}: ${parseFloat(a.qty)||it.total} ${it.satuan}`);}}for(const[sn,its]of Object.entries(byStaf)){lines.push(`*${sn}:*`);its.forEach(x=>lines.push(x));lines.push('');}if(navigator.clipboard)navigator.clipboard.writeText(lines.join('\n')).then(()=>alert('Disalin!'));};
+  const tsIcon=(s)=>{if(s==='done')return<span style={bdg('suc')}>Harga ✓</span>;if(s==='bought')return<span style={bdg('war')}>Sudah beli</span>;return<span style={{...bdg('inf'),background:'#f3f4f6',color:'#6b7280'}}>Belum</span>;};
+  return(<div style={{padding:'1.5rem',maxWidth:'980px'}}>
+    <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'1rem'}}><h2>Rekap &amp; Tugas Beli</h2><div style={{display:'flex',gap:'8px',alignItems:'center'}}><label style={{fontSize:'12px',color:'#6b7280'}}>Tgl Kirim:</label><input type="date" value={sd} onChange={e=>setSd(e.target.value)}/></div></div>
+    {totalT>0&&(<div style={{...C.card,marginBottom:'1rem',border:belum>0?'1px solid #fde68a':'1px solid #a7f3d0',background:belum>0?'#fffbeb':'#f0fdf4'}}><div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'6px'}}><div style={{fontSize:'13px',fontWeight:500,color:belum>0?'#92400e':'#065f46'}}>{belum>0?`⚠️ ${belum} item belum dibeli`:'✅ Semua sudah dibeli!'}</div><div style={{fontSize:'12px',color:'#6b7280'}}>{hargaOk}/{totalT} harga terisi</div></div><div style={{height:'6px',background:'#e5e7eb',borderRadius:'3px',overflow:'hidden'}}><div style={{height:'100%',background:'#065f46',borderRadius:'3px',width:`${totalT>0?(hargaOk/totalT)*100:0}%`}}/></div></div>)}
+    <div style={{display:'flex',gap:'4px',marginBottom:'1rem',borderBottom:'1px solid #e5e7eb'}}>{[['bagi','Bagi Tugas'],['monitor','Monitor Status']].map(([id,lbl])=>(<button key={id} onClick={()=>setTab(id)} style={{padding:'8px 16px',fontSize:'13px',fontWeight:tab===id?500:400,border:'none',background:'transparent',cursor:'pointer',borderBottom:tab===id?'2px solid #1e40af':'2px solid transparent',color:tab===id?'#1e40af':'#6b7280',marginBottom:'-1px'}}>{lbl}{id==='monitor'&&belum>0&&<span style={{...bdg('war'),fontSize:'10px',marginLeft:'4px',padding:'1px 6px'}}>{belum}</span>}</button>))}</div>
+    {tab==='bagi'&&(!ri.length?<div style={{...C.met,padding:'2rem',textAlign:'center',color:'#6b7280'}}>Tidak ada order aktif untuk {sd}</div>:(<>
+      <div style={{display:'flex',flexDirection:'column',gap:'10px'}}>{ri.map(it=>{
+        const assignments=getAssignments(it.nama);const usedQty=assignments.reduce((s,a)=>s+(parseFloat(a.qty)||0),0);const remaining=it.total-usedQty;
+        const hargaInfo=it.harga_juals.every(h=>h===it.harga_juals[0])?fRp(it.harga_juals[0])+'/ '+it.satuan:`${fRp(it.harga_jual_min)} ~ ${fRp(Math.max(...it.harga_juals))} / ${it.satuan}`;
+        return(<div key={it.nama} style={{...C.card,border:'1px solid #e5e7eb'}}>
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:'8px'}}>
+            <div><div style={{fontWeight:600,fontSize:'14px'}}>{it.nama}</div>
+              <div style={{fontSize:'12px',color:'#6b7280',marginTop:'2px'}}>Total: <strong style={{color:'#1e40af'}}>{it.total} {it.satuan}</strong> · {it.ords.map(o=>`${o.dapur}: ${o.qty}`).join(' · ')}</div>
+              <div style={{fontSize:'11px',color:'#065f46',marginTop:'2px'}}>💰 Harga jual: {hargaInfo}</div>
             </div>
-            <div style={{display:'flex',gap:'8px'}}>
-              <button onClick={()=>setDelConfirm(null)} style={{...btn(),flex:1,padding:'9px'}}>Batal</button>
-              <button onClick={()=>handleDelete(delConfirm)} disabled={deleting} style={{...btn('dan'),flex:1,padding:'9px',opacity:deleting?0.6:1}}>
-                {deleting?'Menghapus...':'Hapus'}
-              </button>
-            </div>
+            <button onClick={()=>addAssignment(it.nama,it.total)} style={{...btn('pri'),padding:'4px 10px',fontSize:'11px',whiteSpace:'nowrap'}}>+ Staf</button>
           </div>
-        </div>
-      )}
+          {assignments.length>0&&(<div style={{display:'flex',flexDirection:'column',gap:'6px'}}>
+            {assignments.map((a,idx)=>(<div key={idx} style={{display:'flex',gap:'8px',alignItems:'center',padding:'6px 8px',background:'#f9fafb',borderRadius:'6px'}}>
+              <select value={a.staf} onChange={e=>updateAssignment(it.nama,idx,'staf',e.target.value)} style={{fontSize:'12px',padding:'5px',flex:'1',minWidth:'100px'}}><option value="">— Pilih Staf —</option>{stafBeli.map(s=><option key={s.id} value={s.id}>{s.nama}</option>)}</select>
+              <div style={{display:'flex',alignItems:'center',gap:'4px'}}><input type="number" value={a.qty} onChange={e=>updateAssignment(it.nama,idx,'qty',e.target.value)} style={{width:'75px',textAlign:'right',padding:'5px',fontSize:'12px'}}/><span style={{fontSize:'11px',color:'#6b7280'}}>{it.satuan}</span></div>
+              <button onClick={()=>removeAssignment(it.nama,idx)} style={{fontSize:'16px',color:'#991b1b',background:'none',border:'none',cursor:'pointer',padding:'0 4px',lineHeight:1}}>×</button>
+            </div>))}
+            {Math.abs(remaining)>0.01&&<div style={{fontSize:'11px',color:remaining>0?'#92400e':'#991b1b',padding:'2px 8px'}}>{remaining>0?`⚠️ Sisa ${remaining.toFixed(1)} ${it.satuan} belum ditugaskan`:`⚠️ Kelebihan ${Math.abs(remaining).toFixed(1)} ${it.satuan}`}</div>}
+          </div>)}
+          {assignments.length===0&&<div style={{fontSize:'12px',color:'#9ca3af',fontStyle:'italic'}}>Klik "+ Staf" untuk menugaskan</div>}
+        </div>);
+      })}</div>
+      <div style={{display:'flex',gap:'8px',marginTop:'1rem'}}><button onClick={handleSave} disabled={saving} style={{...btn('suc'),opacity:saving?0.6:1}}>{saving?'Menyimpan...':'Simpan Tugas Beli'}</button><button onClick={handleWA} style={btn('war')}>Salin Teks WA</button></div>
+    </>))}
+    {tab==='monitor'&&(!tugasHariIni.length?<div style={{...C.met,padding:'2rem',textAlign:'center',color:'#6b7280'}}>Belum ada tugas untuk {sd}.</div>:
+      <div style={C.card}><div style={{fontSize:'14px',fontWeight:500,marginBottom:'12px'}}>Status Pembelian — {tugasHariIni.length} item</div>
+        <table style={{width:'100%'}}><thead><tr style={{borderBottom:'1px solid #e5e7eb'}}>{['Staf','Bahan','Qty','Status','Harga Beli'].map((h,i)=>(<th key={i} style={{...C.th,textAlign:i>=3?'right':'left'}}>{h}</th>))}</tr></thead>
+        <tbody>{tugasHariIni.map(t=>(<tr key={t.id} style={{borderBottom:'1px solid #f9fafb'}}><td style={{...C.td,fontWeight:500}}>{getNama(t.staf_id)}</td><td style={C.td}>{t.nama_bahan}</td><td style={{...C.td,color:'#6b7280'}}>{t.qty} {t.satuan}</td><td style={{...C.td,textAlign:'right'}}>{tsIcon(t.status)}</td><td style={{...C.td,textAlign:'right',fontWeight:500,color:t.status==='done'?'#065f46':'#9ca3af'}}>{t.status==='done'?fRp(t.harga_beli):'—'}</td></tr>))}</tbody></table></div>
+    )}
+  </div>);
+}
 
-      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'1.5rem'}}>
-        <h2>Kelola Akun</h2>
-        <button onClick={()=>{setShowForm(x=>!x);setFormErr('');}} style={btn('pri')}>
-          {showForm?'✕ Tutup':'+ Buat Akun Baru'}
-        </button>
+// ---- TUGAS BELI (Staf) with harga_jual & calendar ----
+function TugasBeli({user,tugasBeli,allUsers,orders,onStatusChanged,onHargaSaved}){
+  const[hi,setHi]=useState({});const[saving,setSaving]=useState({});const[konfirm,setKonfirm]=useState({});const[selDate,setSelDate]=useState(todayLocal());
+  const today=todayLocal();
+  const semuaTugas=tugasBeli.filter(t=>normDate(t.tanggal)===selDate);
+  const myTugas=semuaTugas.filter(t=>String(t.staf_id)===String(user.u));
+  const otherTugas=semuaTugas.filter(t=>String(t.staf_id)!==String(user.u));
+  const total=semuaTugas.length;const bought=semuaTugas.filter(t=>t.status==='bought'||t.status==='done').length;const done=semuaTugas.filter(t=>t.status==='done').length;
+  const availDates=useMemo(()=>{const ds=new Set();tugasBeli.forEach(t=>{const d=normDate(t.tanggal);if(d)ds.add(d);});return[...ds].sort().reverse();},[tugasBeli]);
+  const getNama=(sid)=>{const u2=(allUsers||[]).find(x=>x.username===sid||x.id===sid);return u2?u2.name:sid;};
+  // Build harga_jual map from orders
+  const hargaJualMap=useMemo(()=>{
+    const m={};for(const o of orders)for(const it of o.items){const nm=it.nama||it.nama_bahan;if(!m[nm])m[nm]=[];m[nm].push(it.harga_jual);}
+    const result={};for(const[nm,prices]of Object.entries(m)){result[nm]={min:Math.min(...prices),avg:prices.reduce((a,b)=>a+b,0)/prices.length};}return result;
+  },[orders]);
+  const handleBeli=async(t)=>{setKonfirm(p=>({...p,[t.id]:true}));try{const res=await api.post({action:'updateTugasStatus',tugasId:t.id,status:'bought'});if(res.success)onStatusChanged(t.id,'bought');else alert('Gagal');}catch(e){alert('Koneksi bermasalah');}setKonfirm(p=>({...p,[t.id]:false}));};
+  const handleHarga=async(id)=>{const h=parseFloat(hi[id])||0;if(h<=0){alert('Masukkan harga yang valid');return;}setSaving(p=>({...p,[id]:true}));try{const res=await api.post({action:'updateHargaBeli',tugasId:id,hargaBeli:h});if(res.success)onHargaSaved(id,h);else alert('Gagal');}catch(e){alert('Koneksi bermasalah');}setSaving(p=>({...p,[id]:false}));};
+  const statusIcon=(s)=>{if(s==='done')return<span style={bdg('suc')}>Selesai ✓</span>;if(s==='bought')return<span style={bdg('war')}>Sudah dibeli</span>;return<span style={bdg('inf')}>Belum beli</span>;};
+  return(<div style={{padding:'1.5rem',maxWidth:'720px'}}>
+    <h2 style={{marginBottom:'4px'}}>Tugas Beli</h2><div style={{fontSize:'13px',color:'#6b7280',marginBottom:'1rem'}}>Halo {user.name}!</div>
+    <DateNav value={selDate} onChange={setSelDate}/>
+    {availDates.length>0&&(<div style={{display:'flex',gap:'4px',flexWrap:'wrap',marginBottom:'1rem'}}>{availDates.slice(0,7).map(d=>(<button key={d} onClick={()=>setSelDate(d)} style={{padding:'3px 8px',fontSize:'11px',borderRadius:'12px',border:d===selDate?'1.5px solid #3b82f6':'1px solid #e5e7eb',background:d===selDate?'#dbeafe':'#fff',color:d===selDate?'#1e40af':'#6b7280',cursor:'pointer'}}>{d===today?'Hari ini':d.slice(5)}{tugasBeli.filter(t=>normDate(t.tanggal)===d&&String(t.staf_id)===String(user.u)&&t.status!=='done').length>0&&<span style={{color:'#dc2626'}}> •</span>}</button>))}</div>)}
+    {total>0&&(<div style={{...C.card,marginBottom:'1rem'}}><div style={{display:'flex',justifyContent:'space-between',marginBottom:'6px'}}><span style={{fontSize:'13px',fontWeight:500}}>Progress {selDate===today?'hari ini':selDate.slice(5)}</span><span style={{fontSize:'12px',color:'#6b7280'}}>{done}/{total} selesai</span></div><div style={{height:'8px',background:'#f3f4f6',borderRadius:'4px',overflow:'hidden',marginBottom:'8px'}}><div style={{height:'100%',background:'#065f46',borderRadius:'4px',width:`${total>0?(done/total)*100:0}%`}}/></div><div style={{display:'flex',gap:'12px',fontSize:'11px',color:'#6b7280'}}><span>⬜ Belum: {total-bought}</span><span>🟡 Sudah beli: {bought-done}</span><span>✅ Harga terisi: {done}</span></div></div>)}
+    {!myTugas.length?<div style={{...C.met,padding:'2rem',textAlign:'center',color:'#6b7280',marginBottom:'1rem'}}>Belum ada tugas untuk tanggal {selDate}.</div>:(<>
+      <div style={{fontSize:'13px',fontWeight:500,color:'#374151',marginBottom:'8px'}}>Tugasmu ({myTugas.length} item)</div>
+      <div style={{display:'flex',flexDirection:'column',gap:'8px',marginBottom:'1.5rem'}}>{myTugas.map(t=>{
+        const hjInfo=hargaJualMap[t.nama_bahan];
+        return(<div key={t.id} style={{...C.card,border:t.status==='done'?'1px solid #a7f3d0':t.status==='bought'?'1px solid #fde68a':'1px solid #e5e7eb'}}>
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:t.status==='pending'||t.status==='bought'?'10px':'0'}}>
+            <div><div style={{fontWeight:500,marginBottom:'2px'}}>{t.nama_bahan}</div><div style={{fontSize:'12px',color:'#6b7280'}}>{t.qty} {t.satuan}</div>
+              {hjInfo&&<div style={{fontSize:'11px',color:'#065f46',marginTop:'2px'}}>💰 Harga jual: {fRp(hjInfo.min)} / {t.satuan}</div>}
+            </div>{statusIcon(t.status)}
+          </div>
+          {t.status==='pending'&&(<button onClick={()=>handleBeli(t)} disabled={konfirm[t.id]} style={{...btn('pri'),width:'100%',padding:'9px',opacity:konfirm[t.id]?0.6:1}}>{konfirm[t.id]?'Menyimpan...':'✓ Konfirmasi Sudah Beli di Pasar'}</button>)}
+          {t.status==='bought'&&(<div style={{display:'flex',gap:'8px',alignItems:'flex-end'}}><div style={{flex:1}}><label style={{fontSize:'11px',color:'#6b7280',display:'block',marginBottom:'4px'}}>Harga beli per {t.satuan} (Rp):</label><input type="number" placeholder="contoh: 32000" value={hi[t.id]||''} onChange={e=>setHi(p=>({...p,[t.id]:e.target.value}))} style={{width:'100%',boxSizing:'border-box'}}/></div><button onClick={()=>handleHarga(t.id)} disabled={saving[t.id]} style={{...btn('suc'),opacity:saving[t.id]?0.6:1}}>{saving[t.id]?'...':'Simpan'}</button></div>)}
+          {t.status==='done'&&(<div style={{display:'flex',justifyContent:'space-between',fontSize:'13px'}}><span style={{color:'#065f46',fontWeight:500}}>Harga beli: {fRp(t.harga_beli)} / {t.satuan}</span>{hjInfo&&<span style={{color:t.harga_beli<hjInfo.min?'#065f46':'#991b1b',fontSize:'12px'}}>Margin: {fRp(hjInfo.min-t.harga_beli)}</span>}</div>)}
+        </div>);
+      })}</div>
+    </>)}
+    {otherTugas.length>0&&(<><div style={{fontSize:'13px',fontWeight:500,color:'#374151',marginBottom:'8px'}}>Tugas Staf Lain</div><div style={C.card}><table style={{width:'100%',fontSize:'13px'}}><thead><tr style={{borderBottom:'1px solid #f3f4f6'}}>{['Staf','Bahan','Qty','Status','Harga'].map((h,i)=>(<th key={i} style={{...C.th,textAlign:i>=3?'right':'left'}}>{h}</th>))}</tr></thead><tbody>{otherTugas.map(t=>(<tr key={t.id} style={{borderBottom:'1px solid #f9fafb'}}><td style={C.td}>{getNama(t.staf_id)}</td><td style={C.td}>{t.nama_bahan}</td><td style={{...C.td,color:'#6b7280'}}>{t.qty} {t.satuan}</td><td style={{...C.td,textAlign:'right'}}>{statusIcon(t.status)}</td><td style={{...C.td,textAlign:'right',color:'#065f46',fontWeight:500}}>{t.status==='done'?fRp(t.harga_beli):'—'}</td></tr>))}</tbody></table></div></>)}
+  </div>);
+}
+
+// ---- STAF KIRIM (with date filter, 2 photos, surat jalan view) ----
+function PengirimanView({user,orders,pengiriman,onKonfirmasi}){
+  const[sel,setSel]=useState(null);const[fotoCeklis,setFotoCeklis]=useState(null);const[fotoPenerima,setFotoPenerima]=useState(null);
+  const[notes,setNotes]=useState('');const[saving,setSaving]=useState(false);const[selDate,setSelDate]=useState(todayLocal());
+  const[viewSJ,setViewSJ]=useState(null);
+  const today=todayLocal();
+  const filtered=pengiriman.filter(p=>normDate(p.tanggal)===selDate);
+  const availDates=useMemo(()=>{const ds=new Set();pengiriman.forEach(p=>{const d=normDate(p.tanggal);if(d)ds.add(d);});return[...ds].sort().reverse();},[pengiriman]);
+
+  const toBase64=(file)=>new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(r.result);r.onerror=rej;r.readAsDataURL(file);});
+
+  const konfirm=async(pid)=>{
+    if(!fotoCeklis||!fotoPenerima){alert('Upload kedua foto (ceklis surat jalan & penerima)');return;}
+    setSaving(true);
+    try{
+      const fc=await toBase64(fotoCeklis);const fp=await toBase64(fotoPenerima);
+      const res=await api.post({action:'updatePengiriman',pengirimanId:pid,status:'delivered',catatan:notes,foto_ceklis:fc.slice(0,100)+'...[foto]',foto_penerima:fp.slice(0,100)+'...[foto]'});
+      if(res.success){onKonfirmasi(pid);setSel(null);setFotoCeklis(null);setFotoPenerima(null);setNotes('');alert('Pengiriman dikonfirmasi!');}else alert('Gagal');
+    }catch(e){alert('Koneksi bermasalah');}setSaving(false);
+  };
+
+  // Surat Jalan view
+  if(viewSJ){
+    const o=orders.find(x=>x.id===viewSJ.order_id);const d=DAPUR.find(x=>x.id===viewSJ.dapur_id);
+    return(<div style={{padding:'1.5rem',maxWidth:'800px'}}>
+      <div style={{display:'flex',gap:'8px',marginBottom:'1.5rem'}}><button onClick={()=>setViewSJ(null)} style={btn()}>← Kembali</button><button onClick={()=>window.print()} style={btn('pri')}>Cetak</button></div>
+      <div style={{background:'white',border:'1px solid #ddd',borderRadius:'8px',padding:'2rem',fontSize:'13px',lineHeight:1.6}}>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',borderBottom:'2px solid #1a1a1a',paddingBottom:'12px',marginBottom:'16px'}}>
+          <div style={{display:'flex',alignItems:'center',gap:'12px'}}><div style={{width:'54px',height:'54px',borderRadius:'50%',border:'2px solid #333',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'7px',fontWeight:'bold',textAlign:'center',lineHeight:1.3}}>KOPERASI<br/>INDONESIA</div><div><div style={{fontWeight:'bold',fontSize:'15px'}}>KOPERASI KONSUMEN INSAN SINERGI SEJAHTERA</div><div style={{fontSize:'11px',color:'#555'}}>Nomor AHU-0000368.AH.01.29 Tahun 2025</div><div style={{fontSize:'11px',color:'#555'}}>Kp. Tenjonagara 02/02, Mekarjaya, Pacet, Kab. Bandung</div></div></div>
+        </div>
+        <div style={{textAlign:'center',fontWeight:'bold',fontSize:'14px',letterSpacing:'2px',marginBottom:'20px'}}>SURAT JALAN PENGIRIMAN BAHAN</div>
+        <table style={{marginBottom:'16px',fontSize:'13px'}}><tbody><tr><td style={{width:'90px',paddingBottom:'4px',color:'#555'}}>Kepada</td><td></td></tr><tr><td style={{paddingBottom:'4px',color:'#555'}}>Nama</td><td>: <strong>{d?.pic}</strong> {d?.hp}</td></tr><tr><td style={{paddingBottom:'4px',color:'#555'}}>Alamat</td><td>: {d?.alamat}</td></tr><tr><td style={{paddingBottom:'4px',color:'#555'}}>Tanggal</td><td>: {normDate(viewSJ.tanggal)}</td></tr></tbody></table>
+        <table style={{width:'100%',borderCollapse:'collapse',marginBottom:'16px',fontSize:'12px'}}><thead><tr style={{background:'#f5f5f5'}}>{['No','Barang','Qty','Satuan','Ceklis','Keterangan'].map((h,i)=><th key={i} style={{border:'1px solid #ccc',padding:'6px 8px',textAlign:'center'}}>{h}</th>)}</tr></thead><tbody>{o?.items?.map((it,i)=>(<tr key={i}><td style={{border:'1px solid #ccc',padding:'6px 8px',textAlign:'center'}}>{i+1}</td><td style={{border:'1px solid #ccc',padding:'6px 8px'}}>{it.nama||it.nama_bahan}</td><td style={{border:'1px solid #ccc',padding:'6px 8px',textAlign:'right'}}>{it.qty}</td><td style={{border:'1px solid #ccc',padding:'6px 8px',textAlign:'center'}}>{it.satuan}</td><td style={{border:'1px solid #ccc',padding:'6px 8px'}}></td><td style={{border:'1px solid #ccc',padding:'6px 8px'}}></td></tr>))}</tbody></table>
+        <div style={{fontSize:'12px',marginBottom:'20px'}}><strong>NOTES:</strong><br/>Mohon di cek bersama. Jika ada bahan tidak sesuai hubungi admin WA 085351075661</div>
       </div>
+    </div>);
+  }
 
-      {showForm && (
-        <div style={{...C.card,marginBottom:'1rem',border:'1.5px solid #93c5fd'}}>
-          <div style={{fontSize:'14px',fontWeight:500,marginBottom:'1rem',color:'#1e40af'}}>Buat Akun Baru</div>
-          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'12px',marginBottom:'12px'}}>
-            <div>
-              <label style={{fontSize:'12px',color:'#6b7280',display:'block',marginBottom:'4px'}}>Nama Lengkap *</label>
-              <input value={form.name} onChange={e=>setForm(p=>({...p,name:e.target.value}))} placeholder="contoh: Dodi" style={{width:'100%',boxSizing:'border-box'}}/>
-            </div>
-            <div>
-              <label style={{fontSize:'12px',color:'#6b7280',display:'block',marginBottom:'4px'}}>Username *</label>
-              <input value={form.username} onChange={e=>setForm(p=>({...p,username:e.target.value.toLowerCase().replace(/\s/g,'')}))} placeholder="contoh: dodi" style={{width:'100%',boxSizing:'border-box'}}/>
-            </div>
-            <div>
-              <label style={{fontSize:'12px',color:'#6b7280',display:'block',marginBottom:'4px'}}>Password *</label>
-              <div style={{position:'relative'}}>
-                <input type={showNewPass?'text':'password'} value={form.password} onChange={e=>setForm(p=>({...p,password:e.target.value}))} placeholder="Min. 4 karakter" style={{width:'100%',boxSizing:'border-box',paddingRight:'38px'}}/>
-                <button onClick={()=>setShowNewPass(x=>!x)} style={{position:'absolute',right:'8px',top:'50%',transform:'translateY(-50%)',background:'none',border:'none',cursor:'pointer',fontSize:'14px',color:'#9ca3af',padding:'0'}}>{showNewPass?'🙈':'👁️'}</button>
-              </div>
-            </div>
-            <div>
-              <label style={{fontSize:'12px',color:'#6b7280',display:'block',marginBottom:'4px'}}>Role *</label>
-              <select value={form.role} onChange={e=>setForm(p=>({...p,role:e.target.value}))} style={{width:'100%',boxSizing:'border-box'}}>
-                <option value="staf_beli">Staf Pembelian</option>
-                <option value="staf_kirim">Staf Pengiriman</option>
-              </select>
-            </div>
+  return(<div style={{padding:'1.5rem',maxWidth:'680px'}}>
+    <h2 style={{marginBottom:'4px'}}>Daftar Pengiriman</h2><div style={{fontSize:'13px',color:'#6b7280',marginBottom:'1rem'}}>Halo {user.name}!</div>
+    <DateNav value={selDate} onChange={setSelDate} label="Tgl Kirim:"/>
+    {availDates.length>0&&<div style={{display:'flex',gap:'4px',flexWrap:'wrap',marginBottom:'1rem'}}>{availDates.slice(0,7).map(d=>(<button key={d} onClick={()=>setSelDate(d)} style={{padding:'3px 8px',fontSize:'11px',borderRadius:'12px',border:d===selDate?'1.5px solid #3b82f6':'1px solid #e5e7eb',background:d===selDate?'#dbeafe':'#fff',color:d===selDate?'#1e40af':'#6b7280',cursor:'pointer'}}>{d===today?'Hari ini':d.slice(5)}</button>))}</div>}
+    {sel?(<div style={C.card}>
+      <div style={{fontWeight:500,fontSize:'15px',marginBottom:'1rem'}}>Konfirmasi: {DAPUR.find(d=>d.id===sel.dapur_id)?.nama}</div>
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'12px',marginBottom:'12px'}}>
+        <div><div style={{fontSize:'12px',color:'#6b7280',marginBottom:'6px'}}>📋 Foto ceklis surat jalan *</div><input type="file" accept="image/*" capture="environment" onChange={e=>setFotoCeklis(e.target.files[0]||null)} style={{fontSize:'12px',width:'100%'}}/>{fotoCeklis&&<div style={{fontSize:'11px',color:'#065f46',marginTop:'4px'}}>✓ {fotoCeklis.name}</div>}</div>
+        <div><div style={{fontSize:'12px',color:'#6b7280',marginBottom:'6px'}}>🤝 Foto penerima bahan *</div><input type="file" accept="image/*" capture="environment" onChange={e=>setFotoPenerima(e.target.files[0]||null)} style={{fontSize:'12px',width:'100%'}}/>{fotoPenerima&&<div style={{fontSize:'11px',color:'#065f46',marginTop:'4px'}}>✓ {fotoPenerima.name}</div>}</div>
+      </div>
+      <div style={{marginBottom:'1rem'}}><div style={{fontSize:'12px',color:'#6b7280',marginBottom:'6px'}}>Catatan (opsional)</div><textarea value={notes} onChange={e=>setNotes(e.target.value)} placeholder="Catatan..." style={{width:'100%',minHeight:'60px',resize:'vertical',boxSizing:'border-box'}}/></div>
+      <div style={{display:'flex',gap:'8px'}}><button onClick={()=>setSel(null)} style={btn()}>Batal</button><button onClick={()=>konfirm(sel.id)} disabled={!fotoCeklis||!fotoPenerima||saving} style={{...btn('suc'),opacity:fotoCeklis&&fotoPenerima&&!saving?1:0.4}}>{saving?'Menyimpan...':'Konfirmasi Terkirim ✓'}</button></div>
+    </div>):(<div style={{display:'flex',flexDirection:'column',gap:'8px'}}>
+      {filtered.map(p=>{const o=orders.find(x=>x.id===p.order_id);const d=DAPUR.find(x=>x.id===p.dapur_id);
+        return(<div key={p.id} style={{...C.card,display:'flex',alignItems:'center',gap:'12px'}}>
+          <div style={{flex:1}}><div style={{fontWeight:500,marginBottom:'2px'}}>{d?.nama}</div><div style={{fontSize:'12px',color:'#6b7280'}}>{d?.alamat}</div><div style={{fontSize:'11px',color:'#9ca3af',marginTop:'2px'}}>{o?.items?.length||0} item · {normDate(p.tanggal)}</div></div>
+          <div style={{display:'flex',gap:'6px',alignItems:'center'}}>
+            {p.status!=='delivered'&&<button onClick={()=>setViewSJ(p)} style={{...btn(),padding:'4px 10px',fontSize:'11px'}}>Surat Jalan</button>}
+            {p.status==='delivered'?<span style={bdg('suc')}>Terkirim ✓</span>:<button onClick={()=>setSel(p)} style={btn('war')}>Konfirmasi</button>}
           </div>
-          {formErr && <div style={{fontSize:'12px',color:'#991b1b',padding:'8px',background:'#fee2e2',borderRadius:'6px',marginBottom:'12px'}}>{formErr}</div>}
-          <div style={{display:'flex',gap:'8px'}}>
-            <button onClick={()=>{setShowForm(false);setFormErr('');}} style={btn()}>Batal</button>
-            <button onClick={handleSave} disabled={saving} style={{...btn('suc'),opacity:saving?0.6:1}}>{saving?'Menyimpan...':'Simpan Akun ✓'}</button>
-          </div>
-        </div>
-      )}
+        </div>);
+      })}
+      {!filtered.length&&<div style={{...C.met,padding:'2rem',textAlign:'center',color:'#6b7280'}}>Tidak ada pengiriman untuk {selDate}</div>}
+    </div>)}
+  </div>);
+}
 
-      <div style={C.card}>
-        <div style={{fontSize:'14px',fontWeight:500,marginBottom:'12px'}}>Daftar Akun Staf ({users.length} akun)</div>
-        {!users.length ? (
-          <div style={{padding:'2rem',textAlign:'center',color:'#9ca3af',fontSize:'13px'}}>Belum ada akun staf. Buat akun baru di atas.</div>
-        ) : (
-          <table style={{width:'100%'}}>
-            <thead><tr style={{borderBottom:'1px solid #e5e7eb'}}>{['Nama','Username','Password','Role',''].map((h,i)=><th key={i} style={C.th}>{h}</th>)}</tr></thead>
-            <tbody>
-              {users.map(u=>(
-                <tr key={u.id} style={{borderBottom:'1px solid #f3f4f6'}}>
-                  <td style={{...C.td,fontWeight:500}}>{u.name}</td>
-                  <td style={{...C.td,fontFamily:'monospace',fontSize:'12px'}}>{u.username}</td>
-                  <td style={C.td}>
-                    <div style={{display:'flex',alignItems:'center',gap:'6px'}}>
-                      <span style={{fontFamily:'monospace',fontSize:'12px',minWidth:'72px'}}>{showPassMap[u.id]?u.password:'••••••'}</span>
-                      <button onClick={()=>setShowPassMap(p=>({...p,[u.id]:!p[u.id]}))} style={{background:'none',border:'none',cursor:'pointer',fontSize:'13px',color:'#9ca3af',padding:'0',lineHeight:1}}>{showPassMap[u.id]?'🙈':'👁️'}</button>
-                    </div>
-                  </td>
-                  <td style={C.td}><span style={{...bdg(),background:roleBg[u.role]||'#f3f4f6',color:roleColor[u.role]||'#374151'}}>{roleLabel[u.role]||u.role}</span></td>
-                  <td style={C.td}><button onClick={()=>setDelConfirm(u.id)} style={{...btn('dan'),padding:'4px 10px',fontSize:'11px'}}>Hapus</button></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
+// ---- SURAT JALAN (Admin, with date filter) ----
+function SuratJalan({orders,pengiriman}){
+  const[sel,setSel]=useState(null);const[print,setPrint]=useState(false);const[selDate,setSelDate]=useState(todayLocal());
+  const filtered=orders.filter(o=>normDate(o.tanggal_kirim)===selDate);
+  const today=todayLocal();const availDates=useMemo(()=>{const ds=new Set();orders.forEach(o=>{const d=normDate(o.tanggal_kirim);if(d)ds.add(d);});return[...ds].sort().reverse();},[orders]);
+
+  if(print&&sel){
+    const o=orders.find(x=>x.id===sel);const d=DAPUR.find(x=>x.id===o?.dapur_id);const pg=pengiriman.find(p=>p.order_id===sel);
+    return(<div style={{padding:'1.5rem',maxWidth:'800px'}}>
+      <div style={{display:'flex',gap:'8px',marginBottom:'1.5rem'}}><button onClick={()=>setPrint(false)} style={btn()}>← Kembali</button><button onClick={()=>window.print()} style={btn('pri')}>Cetak / Save PDF</button></div>
+      {pg&&pg.status==='delivered'&&(pg.foto_ceklis||pg.foto_penerima)&&(<div style={{...C.card,marginBottom:'1rem',border:'1px solid #a7f3d0'}}><div style={{fontSize:'13px',fontWeight:500,marginBottom:'8px',color:'#065f46'}}>📸 Bukti Pengiriman</div><div style={{fontSize:'12px',color:'#6b7280'}}>{pg.foto_ceklis&&<div>✅ Foto ceklis: tersimpan</div>}{pg.foto_penerima&&<div>✅ Foto penerima: tersimpan</div>}{pg.catatan&&<div style={{marginTop:'4px'}}>Catatan: {pg.catatan}</div>}</div></div>)}
+      <div style={{background:'white',color:'#1a1a1a',border:'1px solid #ddd',borderRadius:'8px',padding:'2rem',fontFamily:'Arial,sans-serif',fontSize:'13px',lineHeight:1.6}}>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',borderBottom:'2px solid #1a1a1a',paddingBottom:'12px',marginBottom:'16px'}}><div style={{display:'flex',alignItems:'center',gap:'12px'}}><div style={{width:'54px',height:'54px',borderRadius:'50%',border:'2px solid #333',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'7px',fontWeight:'bold',textAlign:'center',lineHeight:1.3}}>KOPERASI<br/>INDONESIA</div><div><div style={{fontWeight:'bold',fontSize:'15px'}}>KOPERASI KONSUMEN INSAN SINERGI SEJAHTERA</div><div style={{fontSize:'11px',color:'#555'}}>Nomor AHU-0000368.AH.01.29 Tahun 2025</div><div style={{fontSize:'11px',color:'#555'}}>Kp. Tenjonagara 02/02, Mekarjaya, Pacet, Kab. Bandung</div></div></div><div style={{width:'50px',height:'50px',borderRadius:'50%',border:'2px solid #333',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'7px',fontWeight:'bold',textAlign:'center',lineHeight:1.3}}>ISS<br/>KOPERASI</div></div>
+        <div style={{textAlign:'center',fontWeight:'bold',fontSize:'14px',letterSpacing:'2px',marginBottom:'20px'}}>SURAT JALAN PENGIRIMAN BAHAN</div>
+        <table style={{marginBottom:'16px',fontSize:'13px'}}><tbody><tr><td style={{width:'90px',paddingBottom:'4px',color:'#555'}}>Kepada Yth</td><td></td></tr><tr><td style={{paddingBottom:'4px',color:'#555'}}>Nama</td><td>: <strong>{d?.pic}</strong>&nbsp;&nbsp;&nbsp;{d?.hp}</td></tr><tr><td style={{paddingBottom:'4px',color:'#555'}}>Alamat</td><td>: {d?.alamat}</td></tr><tr><td style={{paddingBottom:'4px',color:'#555'}}>Tanggal</td><td>: {normDate(o?.tanggal_kirim)}</td></tr></tbody></table>
+        <div style={{marginBottom:'12px',fontSize:'13px'}}>Nama Pengirim : Kosim</div>
+        <table style={{width:'100%',borderCollapse:'collapse',marginBottom:'16px',fontSize:'12px'}}><thead><tr style={{background:'#f5f5f5'}}>{['No','Barang','Qty','Satuan','Ceklis jika sesuai','Keterangan'].map((h,i)=><th key={i} style={{border:'1px solid #ccc',padding:'6px 8px',textAlign:'center'}}>{h}</th>)}</tr></thead><tbody>{o?.items?.map((it,i)=>(<tr key={i}><td style={{border:'1px solid #ccc',padding:'6px 8px',textAlign:'center'}}>{i+1}</td><td style={{border:'1px solid #ccc',padding:'6px 8px'}}>{it.nama||it.nama_bahan}</td><td style={{border:'1px solid #ccc',padding:'6px 8px',textAlign:'right'}}>{it.qty}</td><td style={{border:'1px solid #ccc',padding:'6px 8px',textAlign:'center'}}>{it.satuan}</td><td style={{border:'1px solid #ccc',padding:'6px 8px'}}></td><td style={{border:'1px solid #ccc',padding:'6px 8px'}}></td></tr>))}</tbody></table>
+        <div style={{marginBottom:'20px',fontSize:'12px'}}><strong>NOTES :</strong><br/>Mohon di cek bersama antara pengirim dan penerima bahan baku<br/>Jika ada bahan yang tidak sesuai kuntitas dan kualita mohon segera hubungi admin<br/>WA Admin 085351075661</div>
+        <div style={{display:'flex',justifyContent:'space-between',marginTop:'2rem'}}><div style={{textAlign:'center',width:'220px'}}><div style={{marginBottom:'8px',fontSize:'13px'}}>Hormat kami</div><div style={{height:'56px',border:'1px dashed #ccc',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'10px',color:'#aaa'}}>[Tanda Tangan]</div><div style={{fontSize:'12px',marginTop:'4px'}}>Koperasi Insan Sinergi Sejahtera</div></div><div style={{textAlign:'center',width:'220px'}}><div style={{marginBottom:'8px',fontSize:'13px'}}>Tanda terima,</div><div style={{height:'56px'}}></div><div style={{fontSize:'12px'}}>({Array(44).fill('.').join('')})</div></div></div>
+      </div>
+    </div>);
+  }
+
+  return(<div style={{padding:'1.5rem',maxWidth:'680px'}}>
+    <h2 style={{marginBottom:'1rem'}}>Surat Jalan</h2>
+    <DateNav value={selDate} onChange={setSelDate} label="Tgl Kirim:"/>
+    {availDates.length>0&&<div style={{display:'flex',gap:'4px',flexWrap:'wrap',marginBottom:'1rem'}}>{availDates.slice(0,7).map(d=>(<button key={d} onClick={()=>setSelDate(d)} style={{padding:'3px 8px',fontSize:'11px',borderRadius:'12px',border:d===selDate?'1.5px solid #3b82f6':'1px solid #e5e7eb',background:d===selDate?'#dbeafe':'#fff',color:d===selDate?'#1e40af':'#6b7280',cursor:'pointer'}}>{d===today?'Hari ini':d.slice(5)}</button>))}</div>}
+    <div style={{display:'flex',flexDirection:'column',gap:'8px'}}>
+      {filtered.map(o=>{const d=DAPUR.find(x=>x.id===o.dapur_id);const pg=pengiriman.find(p=>p.order_id===o.id);
+        return(<div key={o.id} style={{...C.card,display:'flex',alignItems:'center',gap:'12px'}}>
+          <div style={{flex:1}}><div style={{fontWeight:500,marginBottom:'2px'}}>{d?.nama}</div><div style={{fontSize:'12px',color:'#6b7280'}}>{o.items.length} item · Kirim: {normDate(o.tanggal_kirim)}</div>
+            {pg?.status==='delivered'&&(pg.foto_ceklis||pg.foto_penerima)&&<div style={{fontSize:'11px',color:'#065f46',marginTop:'2px'}}>📸 Bukti foto tersimpan</div>}
+          </div>
+          <div style={{display:'flex',gap:'8px',alignItems:'center'}}><StatusBadge status={o.status}/><button onClick={()=>{setSel(o.id);setPrint(true);}} style={btn('pri')}>Lihat Surat</button></div>
+        </div>);
+      })}
+      {!filtered.length&&<div style={{...C.met,padding:'2rem',textAlign:'center',color:'#6b7280'}}>Belum ada order untuk {selDate}</div>}
+    </div>
+  </div>);
+}
+
+// ---- LAPORAN (with date filter, daily, trends, kerugian) ----
+function Laporan({orders,kerugian,onKerugianAdded,onKerugianDeleted}){
+  const today=todayLocal();
+  const[dateFrom,setDateFrom]=useState(()=>{const d=new Date();d.setDate(d.getDate()-7);return`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;});
+  const[dateTo,setDateTo]=useState(today);
+  const[tab,setTab]=useState('ringkasan');
+  const[showKerugianForm,setShowKerugianForm]=useState(false);
+  const[kForm,setKForm]=useState({tanggal:today,nama_bahan:'',qty:'',satuan:'Kg',biaya:'',keterangan:''});
+  const[kSaving,setKSaving]=useState(false);
+
+  const filteredOrders=orders.filter(o=>{const d=normDate(o.tanggal_kirim);return d>=dateFrom&&d<=dateTo&&o.status!=='cancelled';});
+  const filteredKerugian=kerugian.filter(k=>{const d=normDate(k.tanggal);return d>=dateFrom&&d<=dateTo;});
+
+  const tj=filteredOrders.reduce((s,o)=>s+o.items.reduce((ss,i)=>ss+i.qty*i.harga_jual,0),0);
+  const tb=filteredOrders.reduce((s,o)=>s+o.items.reduce((ss,i)=>ss+i.qty*i.harga_beli,0),0);
+  const totalKerugian=filteredKerugian.reduce((s,k)=>s+k.biaya,0);
+  const pf=tj-tb-totalKerugian;const mg=tj>0?((pf/tj)*100).toFixed(1):0;
+
+  // Daily breakdown
+  const dailyData=useMemo(()=>{
+    const m={};
+    for(const o of filteredOrders){const d=normDate(o.tanggal_kirim);if(!m[d])m[d]={date:d,jual:0,beli:0,kerugian:0};const j=o.items.reduce((s,i)=>s+i.qty*i.harga_jual,0);const b=o.items.reduce((s,i)=>s+i.qty*i.harga_beli,0);m[d].jual+=j;m[d].beli+=b;}
+    for(const k of filteredKerugian){const d=normDate(k.tanggal);if(!m[d])m[d]={date:d,jual:0,beli:0,kerugian:0};m[d].kerugian+=k.biaya;}
+    return Object.values(m).sort((a,b)=>a.date.localeCompare(b.date)).map(d=>({...d,profit:d.jual-d.beli-d.kerugian}));
+  },[filteredOrders,filteredKerugian]);
+
+  // Per dapur
+  const perDapur=DAPUR.map(d=>{const dos=filteredOrders.filter(o=>o.dapur_id===d.id);const j=dos.reduce((s,o)=>s+o.items.reduce((ss,i)=>ss+i.qty*i.harga_jual,0),0);const b=dos.reduce((s,o)=>s+o.items.reduce((ss,i)=>ss+i.qty*i.harga_beli,0),0);return{nama:d.nama,ords:dos.length,j,b,pf:j-b};});
+
+  // Per item
+  const im={};for(const o of filteredOrders)for(const it of o.items){const nm=it.nama||it.nama_bahan;if(!im[nm])im[nm]={nama:nm,qty:0,j:0,b:0};im[nm].qty+=it.qty;im[nm].j+=it.qty*it.harga_jual;im[nm].b+=it.qty*it.harga_beli;}
+  const perItem=Object.values(im).map(x=>({...x,pf:x.j-x.b})).sort((a,b)=>b.pf-a.pf);
+
+  // Trend analysis
+  const trendMsg=useMemo(()=>{
+    if(dailyData.length<2)return'Data terlalu sedikit untuk analisis tren.';
+    const profits=dailyData.map(d=>d.profit);const first=profits.slice(0,Math.ceil(profits.length/2));const second=profits.slice(Math.ceil(profits.length/2));
+    const avgFirst=first.reduce((a,b)=>a+b,0)/first.length;const avgSecond=second.reduce((a,b)=>a+b,0)/second.length;
+    const best=dailyData.reduce((a,b)=>a.profit>b.profit?a:b);const worst=dailyData.reduce((a,b)=>a.profit<b.profit?a:b);
+    let trend='';if(avgSecond>avgFirst*1.05)trend='📈 Tren profit NAIK.';else if(avgSecond<avgFirst*0.95)trend='📉 Tren profit TURUN.';else trend='➡️ Tren profit STABIL.';
+    return`${trend} Profit tertinggi: ${fRp(best.profit)} (${best.date.slice(5)}). Terendah: ${fRp(worst.profit)} (${worst.date.slice(5)}).`;
+  },[dailyData]);
+
+  // Max bar for chart
+  const maxVal=Math.max(...dailyData.map(d=>Math.max(d.jual,Math.abs(d.profit))),1);
+
+  const handleAddKerugian=async()=>{
+    if(!kForm.nama_bahan||!kForm.biaya){alert('Isi nama bahan dan biaya');return;}
+    setKSaving(true);
+    const item={id:'krgn-'+Date.now(),tanggal:kForm.tanggal,nama_bahan:kForm.nama_bahan,qty:parseFloat(kForm.qty)||0,satuan:kForm.satuan,biaya:parseFloat(kForm.biaya)||0,keterangan:kForm.keterangan};
+    try{const res=await api.post({action:'addKerugian',item});if(res.success){onKerugianAdded(item);setKForm({tanggal:today,nama_bahan:'',qty:'',satuan:'Kg',biaya:'',keterangan:''});setShowKerugianForm(false);alert('Kerugian tercatat!');}else alert('Gagal');}catch(e){alert('Koneksi bermasalah');}
+    setKSaving(false);
+  };
+
+  const handleDeleteKerugian=async(id)=>{
+    if(!confirm('Hapus catatan kerugian ini?'))return;
+    try{const res=await api.post({action:'deleteKerugian',kerugianId:id});if(res.success)onKerugianDeleted(id);}catch(e){alert('Gagal');}
+  };
+
+  return(<div style={{padding:'1.5rem',maxWidth:'960px'}}>
+    <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'1rem',flexWrap:'wrap',gap:'8px'}}>
+      <h2>Laporan Keuangan</h2>
+      <div style={{display:'flex',gap:'8px',alignItems:'center'}}>
+        <label style={{fontSize:'12px',color:'#6b7280'}}>Dari:</label><input type="date" value={dateFrom} onChange={e=>setDateFrom(e.target.value)} style={{fontSize:'12px'}}/>
+        <label style={{fontSize:'12px',color:'#6b7280'}}>Sampai:</label><input type="date" value={dateTo} onChange={e=>setDateTo(e.target.value)} style={{fontSize:'12px'}}/>
       </div>
     </div>
-  );
+
+    <div style={{display:'grid',gridTemplateColumns:'repeat(5,minmax(0,1fr))',gap:'10px',marginBottom:'1.5rem'}}>
+      {[{l:'Penjualan',v:fRp(tj),c:'#1e40af'},{l:'Pembelian',v:fRp(tb),c:'#92400e'},{l:'Kerugian',v:fRp(totalKerugian),c:'#991b1b'},{l:'Profit Bersih',v:fRp(pf),c:pf>=0?'#065f46':'#991b1b'},{l:'Margin',v:mg+'%',c:'#374151'}].map(c=>(<div key={c.l} style={C.met}><div style={{fontSize:'11px',color:'#6b7280',marginBottom:'4px'}}>{c.l}</div><div style={{fontSize:'16px',fontWeight:500,color:c.c}}>{c.v}</div></div>))}
+    </div>
+
+    {/* Trend */}
+    <div style={{...C.card,marginBottom:'1rem',border:'1px solid #dbeafe',background:'#f0f9ff'}}>
+      <div style={{fontSize:'13px',fontWeight:500,marginBottom:'6px',color:'#1e40af'}}>📊 Analisis Tren</div>
+      <div style={{fontSize:'13px',color:'#374151'}}>{trendMsg}</div>
+    </div>
+
+    <div style={{display:'flex',gap:'4px',marginBottom:'1rem',borderBottom:'1px solid #e5e7eb'}}>
+      {[['ringkasan','Ringkasan'],['harian','Harian'],['dapur','Per Dapur'],['item','Per Item'],['kerugian','Kerugian']].map(([id,lbl])=>(
+        <button key={id} onClick={()=>setTab(id)} style={{padding:'8px 14px',fontSize:'13px',fontWeight:tab===id?500:400,border:'none',background:'transparent',cursor:'pointer',borderBottom:tab===id?'2px solid #1e40af':'2px solid transparent',color:tab===id?'#1e40af':'#6b7280',marginBottom:'-1px'}}>{lbl}</button>
+      ))}
+    </div>
+
+    {tab==='ringkasan'&&(<div style={C.card}>
+      <div style={{fontSize:'14px',fontWeight:500,marginBottom:'12px'}}>Grafik Harian</div>
+      {dailyData.length===0?<div style={{padding:'2rem',textAlign:'center',color:'#9ca3af'}}>Tidak ada data</div>:
+      <div style={{display:'flex',gap:'4px',alignItems:'flex-end',height:'180px',padding:'8px 0',borderBottom:'1px solid #e5e7eb'}}>
+        {dailyData.map(d=>(<div key={d.date} style={{flex:1,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'flex-end',height:'100%',minWidth:'30px'}}>
+          <div style={{fontSize:'10px',color:'#065f46',marginBottom:'2px'}}>{fRp(d.profit).replace('Rp ','')}</div>
+          <div style={{width:'70%',background:d.profit>=0?'#d1fae5':'#fee2e2',borderRadius:'3px 3px 0 0',minHeight:'2px',height:`${Math.max(2,Math.abs(d.profit)/maxVal*120)}px`}}/>
+          <div style={{width:'70%',background:'#dbeafe',borderRadius:'0',minHeight:'2px',height:`${Math.max(2,d.jual/maxVal*120)}px`,marginTop:'1px',opacity:0.5}}/>
+          <div style={{fontSize:'9px',color:'#6b7280',marginTop:'4px',transform:'rotate(-45deg)',whiteSpace:'nowrap'}}>{d.date.slice(5)}</div>
+        </div>))}
+      </div>}
+      <div style={{display:'flex',gap:'16px',marginTop:'8px',fontSize:'11px',color:'#6b7280'}}><span>🟩 Profit</span><span>🟦 Penjualan</span></div>
+    </div>)}
+
+    {tab==='harian'&&(<div style={C.card}>
+      <div style={{fontSize:'14px',fontWeight:500,marginBottom:'12px'}}>Laporan Harian</div>
+      <table style={{width:'100%'}}><thead><tr style={{borderBottom:'1px solid #e5e7eb'}}>{['Tanggal','Penjualan','Pembelian','Kerugian','Profit'].map((h,i)=><th key={i} style={{...C.th,textAlign:i>=1?'right':'left'}}>{h}</th>)}</tr></thead>
+      <tbody>{dailyData.map(d=>(<tr key={d.date} style={{borderBottom:'1px solid #f3f4f6'}}><td style={C.td}>{d.date}</td><td style={{...C.td,textAlign:'right'}}>{fRp(d.jual)}</td><td style={{...C.td,textAlign:'right'}}>{fRp(d.beli)}</td><td style={{...C.td,textAlign:'right',color:'#991b1b'}}>{d.kerugian>0?fRp(d.kerugian):'—'}</td><td style={{...C.td,textAlign:'right',fontWeight:600,color:d.profit>=0?'#065f46':'#991b1b'}}>{fRp(d.profit)}</td></tr>))}</tbody>
+      <tfoot><tr style={{borderTop:'2px solid #d1d5db'}}><td style={{...C.td,fontWeight:600}}>TOTAL</td><td style={{...C.td,textAlign:'right',fontWeight:600}}>{fRp(tj)}</td><td style={{...C.td,textAlign:'right',fontWeight:600}}>{fRp(tb)}</td><td style={{...C.td,textAlign:'right',fontWeight:600,color:'#991b1b'}}>{totalKerugian>0?fRp(totalKerugian):'—'}</td><td style={{...C.td,textAlign:'right',fontWeight:700,color:pf>=0?'#065f46':'#991b1b'}}>{fRp(pf)}</td></tr></tfoot></table>
+    </div>)}
+
+    {tab==='dapur'&&(<div style={C.card}>
+      <div style={{fontSize:'14px',fontWeight:500,marginBottom:'12px'}}>Per Dapur</div>
+      <table style={{width:'100%'}}><thead><tr style={{borderBottom:'1px solid #e5e7eb'}}>{['Dapur','Order','Penjualan','Pembelian','Profit','Margin'].map((h,i)=><th key={i} style={{...C.th,textAlign:i>=2?'right':'left'}}>{h}</th>)}</tr></thead>
+      <tbody>{perDapur.map(d=>(<tr key={d.nama} style={{borderBottom:'1px solid #f3f4f6'}}><td style={C.td}>{d.nama}</td><td style={C.td}>{d.ords}</td><td style={{...C.td,textAlign:'right'}}>{fRp(d.j)}</td><td style={{...C.td,textAlign:'right'}}>{fRp(d.b)}</td><td style={{...C.td,textAlign:'right',fontWeight:600,color:d.pf>=0?'#065f46':'#991b1b'}}>{fRp(d.pf)}</td><td style={{...C.td,textAlign:'right',color:'#6b7280'}}>{d.j>0?((d.pf/d.j)*100).toFixed(1):0}%</td></tr>))}</tbody></table>
+    </div>)}
+
+    {tab==='item'&&(<div style={C.card}>
+      <div style={{fontSize:'14px',fontWeight:500,marginBottom:'12px'}}>Per Item — profit tertinggi</div>
+      <table style={{width:'100%'}}><thead><tr style={{borderBottom:'1px solid #e5e7eb'}}>{['Bahan','Qty','Penjualan','Pembelian','Profit'].map((h,i)=><th key={i} style={{...C.th,textAlign:i>=2?'right':'left'}}>{h}</th>)}</tr></thead>
+      <tbody>{perItem.map(it=>(<tr key={it.nama} style={{borderBottom:'1px solid #f3f4f6'}}><td style={C.td}>{it.nama}</td><td style={C.td}>{it.qty}</td><td style={{...C.td,textAlign:'right'}}>{fRp(it.j)}</td><td style={{...C.td,textAlign:'right'}}>{fRp(it.b)}</td><td style={{...C.td,textAlign:'right',fontWeight:600,color:it.pf>=0?'#065f46':'#991b1b'}}>{fRp(it.pf)}</td></tr>))}</tbody></table>
+    </div>)}
+
+    {tab==='kerugian'&&(<div>
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'1rem'}}>
+        <div style={{fontSize:'14px',fontWeight:500}}>Catatan Kerugian / Ganti Rugi</div>
+        <button onClick={()=>setShowKerugianForm(x=>!x)} style={btn('dan')}>{showKerugianForm?'✕ Tutup':'+ Tambah Kerugian'}</button>
+      </div>
+      {showKerugianForm&&(<div style={{...C.card,marginBottom:'1rem',border:'1.5px solid #fca5a5'}}>
+        <div style={{fontSize:'13px',fontWeight:500,color:'#991b1b',marginBottom:'12px'}}>Input Kerugian Baru</div>
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:'10px',marginBottom:'12px'}}>
+          <div><label style={{fontSize:'11px',color:'#6b7280',display:'block',marginBottom:'4px'}}>Tanggal</label><input type="date" value={kForm.tanggal} onChange={e=>setKForm(p=>({...p,tanggal:e.target.value}))} style={{width:'100%',boxSizing:'border-box'}}/></div>
+          <div><label style={{fontSize:'11px',color:'#6b7280',display:'block',marginBottom:'4px'}}>Nama Bahan *</label><input value={kForm.nama_bahan} onChange={e=>setKForm(p=>({...p,nama_bahan:e.target.value}))} placeholder="contoh: Bawang Merah" style={{width:'100%',boxSizing:'border-box'}}/></div>
+          <div><label style={{fontSize:'11px',color:'#6b7280',display:'block',marginBottom:'4px'}}>Biaya Kerugian (Rp) *</label><input type="number" value={kForm.biaya} onChange={e=>setKForm(p=>({...p,biaya:e.target.value}))} placeholder="contoh: 150000" style={{width:'100%',boxSizing:'border-box'}}/></div>
+        </div>
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 2fr',gap:'10px',marginBottom:'12px'}}>
+          <div><label style={{fontSize:'11px',color:'#6b7280',display:'block',marginBottom:'4px'}}>Qty</label><input type="number" value={kForm.qty} onChange={e=>setKForm(p=>({...p,qty:e.target.value}))} style={{width:'100%',boxSizing:'border-box'}}/></div>
+          <div><label style={{fontSize:'11px',color:'#6b7280',display:'block',marginBottom:'4px'}}>Satuan</label><input value={kForm.satuan} onChange={e=>setKForm(p=>({...p,satuan:e.target.value}))} style={{width:'100%',boxSizing:'border-box'}}/></div>
+          <div><label style={{fontSize:'11px',color:'#6b7280',display:'block',marginBottom:'4px'}}>Keterangan</label><input value={kForm.keterangan} onChange={e=>setKForm(p=>({...p,keterangan:e.target.value}))} placeholder="contoh: Bawang busuk saat pengiriman" style={{width:'100%',boxSizing:'border-box'}}/></div>
+        </div>
+        <button onClick={handleAddKerugian} disabled={kSaving} style={{...btn('dan'),opacity:kSaving?0.6:1}}>{kSaving?'Menyimpan...':'Simpan Kerugian'}</button>
+      </div>)}
+
+      <div style={C.card}>
+        {!filteredKerugian.length?<div style={{padding:'2rem',textAlign:'center',color:'#9ca3af',fontSize:'13px'}}>Belum ada catatan kerugian untuk periode ini.</div>:
+        <table style={{width:'100%'}}><thead><tr style={{borderBottom:'1px solid #e5e7eb'}}>{['Tanggal','Bahan','Qty','Biaya','Keterangan',''].map((h,i)=><th key={i} style={{...C.th,textAlign:i===3?'right':'left'}}>{h}</th>)}</tr></thead>
+        <tbody>{filteredKerugian.map(k=>(<tr key={k.id} style={{borderBottom:'1px solid #f3f4f6'}}><td style={C.td}>{normDate(k.tanggal)}</td><td style={C.td}>{k.nama_bahan}</td><td style={{...C.td,color:'#6b7280'}}>{k.qty>0?`${k.qty} ${k.satuan}`:'-'}</td><td style={{...C.td,textAlign:'right',fontWeight:600,color:'#991b1b'}}>{fRp(k.biaya)}</td><td style={{...C.td,color:'#6b7280',fontSize:'12px'}}>{k.keterangan||'-'}</td><td style={C.td}><button onClick={()=>handleDeleteKerugian(k.id)} style={{...btn('dan'),padding:'3px 8px',fontSize:'11px'}}>Hapus</button></td></tr>))}</tbody>
+        <tfoot><tr style={{borderTop:'2px solid #d1d5db'}}><td colSpan={3} style={{...C.td,fontWeight:600}}>Total Kerugian</td><td style={{...C.td,textAlign:'right',fontWeight:700,color:'#991b1b'}}>{fRp(totalKerugian)}</td><td colSpan={2}></td></tr></tfoot></table>}
+      </div>
+    </div>)}
+  </div>);
+}
+
+// ---- KELOLA AKUN ----
+function KelolaAkun({allUsers,onUsersChanged}){
+  const allowedRoles=['staf_beli','staf_kirim'];const users=(allUsers||[]).filter(u=>allowedRoles.includes(u.role));
+  const[showForm,setShowForm]=useState(false);const[saving,setSaving]=useState(false);const[showPassMap,setShowPassMap]=useState({});
+  const[delConfirm,setDelConfirm]=useState(null);const[deleting,setDeleting]=useState(false);
+  const[form,setForm]=useState({name:'',username:'',password:'',role:'staf_beli'});const[formErr,setFormErr]=useState('');const[showNewPass,setShowNewPass]=useState(false);
+  const roleLabel={staf_beli:'Staf Pembelian',staf_kirim:'Staf Pengiriman'};const roleBg={staf_beli:'#d1fae5',staf_kirim:'#fef3c7'};const roleColor={staf_beli:'#065f46',staf_kirim:'#92400e'};
+  const validate=()=>{if(!form.name.trim())return'Nama wajib diisi';if(!form.username.trim())return'Username wajib diisi';if(form.username.includes(' '))return'Username tidak boleh ada spasi';if(form.password.length<4)return'Password minimal 4 karakter';if((allUsers||[]).find(u=>u.username===form.username))return'Username sudah dipakai';return'';};
+  const handleSave=async()=>{const err=validate();if(err){setFormErr(err);return;}setSaving(true);setFormErr('');try{const newUser={id:'u-'+Date.now(),...form};const res=await api.post({action:'addUser',user:newUser});if(res.success){onUsersChanged(prev=>[...prev,newUser]);setForm({name:'',username:'',password:'',role:'staf_beli'});setShowForm(false);setShowNewPass(false);}else setFormErr(res.error||'Gagal menyimpan');}catch(e){setFormErr('Koneksi bermasalah');}setSaving(false);};
+  const handleDelete=async(userId)=>{setDeleting(true);try{const res=await api.post({action:'deleteUser',userId});if(res.success){onUsersChanged(prev=>prev.filter(u=>u.id!==userId));setDelConfirm(null);}else alert('Gagal');}catch(e){alert('Koneksi bermasalah');}setDeleting(false);};
+  const delUser=users.find(u=>u.id===delConfirm);
+  return(<div style={{padding:'1.5rem',maxWidth:'700px'}}>
+    {delConfirm&&(<div style={{position:'fixed',top:0,left:0,right:0,bottom:0,background:'rgba(0,0,0,0.4)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:1000}}><div style={{background:'#fff',borderRadius:'12px',padding:'1.5rem',maxWidth:'340px',width:'90%'}}><div style={{fontSize:'28px',textAlign:'center',marginBottom:'10px'}}>🗑️</div><div style={{fontSize:'15px',fontWeight:600,textAlign:'center',marginBottom:'8px'}}>Hapus Akun?</div><div style={{fontSize:'13px',color:'#6b7280',textAlign:'center',marginBottom:'1.5rem',lineHeight:1.6}}>Akun <strong>{delUser?.name}</strong> ({delUser?.username}) akan dihapus permanen.</div><div style={{display:'flex',gap:'8px'}}><button onClick={()=>setDelConfirm(null)} style={{...btn(),flex:1,padding:'9px'}}>Batal</button><button onClick={()=>handleDelete(delConfirm)} disabled={deleting} style={{...btn('dan'),flex:1,padding:'9px',opacity:deleting?0.6:1}}>{deleting?'Menghapus...':'Hapus'}</button></div></div></div>)}
+    <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'1.5rem'}}><h2>Kelola Akun</h2><button onClick={()=>{setShowForm(x=>!x);setFormErr('');}} style={btn('pri')}>{showForm?'✕ Tutup':'+ Buat Akun Baru'}</button></div>
+    {showForm&&(<div style={{...C.card,marginBottom:'1rem',border:'1.5px solid #93c5fd'}}>
+      <div style={{fontSize:'14px',fontWeight:500,marginBottom:'1rem',color:'#1e40af'}}>Buat Akun Baru</div>
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'12px',marginBottom:'12px'}}>
+        <div><label style={{fontSize:'12px',color:'#6b7280',display:'block',marginBottom:'4px'}}>Nama Lengkap *</label><input value={form.name} onChange={e=>setForm(p=>({...p,name:e.target.value}))} placeholder="contoh: Dodi" style={{width:'100%',boxSizing:'border-box'}}/></div>
+        <div><label style={{fontSize:'12px',color:'#6b7280',display:'block',marginBottom:'4px'}}>Username *</label><input value={form.username} onChange={e=>setForm(p=>({...p,username:e.target.value.toLowerCase().replace(/\s/g,'')}))} placeholder="contoh: dodi" style={{width:'100%',boxSizing:'border-box'}}/></div>
+        <div><label style={{fontSize:'12px',color:'#6b7280',display:'block',marginBottom:'4px'}}>Password *</label><div style={{position:'relative'}}><input type={showNewPass?'text':'password'} value={form.password} onChange={e=>setForm(p=>({...p,password:e.target.value}))} placeholder="Min. 4 karakter" style={{width:'100%',boxSizing:'border-box',paddingRight:'38px'}}/><button onClick={()=>setShowNewPass(x=>!x)} style={{position:'absolute',right:'8px',top:'50%',transform:'translateY(-50%)',background:'none',border:'none',cursor:'pointer',fontSize:'14px',color:'#9ca3af',padding:'0'}}>{showNewPass?'🙈':'👁️'}</button></div></div>
+        <div><label style={{fontSize:'12px',color:'#6b7280',display:'block',marginBottom:'4px'}}>Role *</label><select value={form.role} onChange={e=>setForm(p=>({...p,role:e.target.value}))} style={{width:'100%',boxSizing:'border-box'}}><option value="staf_beli">Staf Pembelian</option><option value="staf_kirim">Staf Pengiriman</option></select></div>
+      </div>
+      {formErr&&<div style={{fontSize:'12px',color:'#991b1b',padding:'8px',background:'#fee2e2',borderRadius:'6px',marginBottom:'12px'}}>{formErr}</div>}
+      <div style={{display:'flex',gap:'8px'}}><button onClick={()=>{setShowForm(false);setFormErr('');}} style={btn()}>Batal</button><button onClick={handleSave} disabled={saving} style={{...btn('suc'),opacity:saving?0.6:1}}>{saving?'Menyimpan...':'Simpan Akun ✓'}</button></div>
+    </div>)}
+    <div style={C.card}>
+      <div style={{fontSize:'14px',fontWeight:500,marginBottom:'12px'}}>Daftar Akun Staf ({users.length} akun)</div>
+      {!users.length?<div style={{padding:'2rem',textAlign:'center',color:'#9ca3af',fontSize:'13px'}}>Belum ada akun staf.</div>:
+      <table style={{width:'100%'}}><thead><tr style={{borderBottom:'1px solid #e5e7eb'}}>{['Nama','Username','Password','Role',''].map((h,i)=><th key={i} style={C.th}>{h}</th>)}</tr></thead><tbody>
+        {users.map(u=>(<tr key={u.id} style={{borderBottom:'1px solid #f3f4f6'}}><td style={{...C.td,fontWeight:500}}>{u.name}</td><td style={{...C.td,fontFamily:'monospace',fontSize:'12px'}}>{u.username}</td><td style={C.td}><div style={{display:'flex',alignItems:'center',gap:'6px'}}><span style={{fontFamily:'monospace',fontSize:'12px',minWidth:'72px'}}>{showPassMap[u.id]?u.password:'••••••'}</span><button onClick={()=>setShowPassMap(p=>({...p,[u.id]:!p[u.id]}))} style={{background:'none',border:'none',cursor:'pointer',fontSize:'13px',color:'#9ca3af',padding:'0',lineHeight:1}}>{showPassMap[u.id]?'🙈':'👁️'}</button></div></td><td style={C.td}><span style={{...bdg(),background:roleBg[u.role]||'#f3f4f6',color:roleColor[u.role]||'#374151'}}>{roleLabel[u.role]||u.role}</span></td><td style={C.td}><button onClick={()=>setDelConfirm(u.id)} style={{...btn('dan'),padding:'4px 10px',fontSize:'11px'}}>Hapus</button></td></tr>))}
+      </tbody></table>}
+    </div>
+  </div>);
 }
 
 // =============================================
 // MAIN APP
 // =============================================
-function App() {
-  const [user, setUser]         = useState(()=>{
-    try {
-      const saved = localStorage.getItem('koperasi_session');
-      if (saved) {
-        const {user: u, ts} = JSON.parse(saved);
-        if (Date.now() - ts < 30 * 60 * 1000) return u; // 30 menit
-        localStorage.removeItem('koperasi_session');
-      }
-    } catch(e){}
-    return null;
-  });
-  const [view, setView]         = useState('dashboard');
-  const [orders, setOrders]     = useState([]);
-  const [tugas, setTugas]       = useState([]);
-  const [pngrm, setPngrm]       = useState([]);
-  const [allUsers, setAllUsers] = useState([]);
-  const [loading, setLoading]   = useState(false);
-  const [error, setError]       = useState(null);
+function App(){
+  const[user,setUser]=useState(()=>{try{const saved=localStorage.getItem('koperasi_session');if(saved){const{user:u,ts}=JSON.parse(saved);if(Date.now()-ts<30*60*1000)return u;localStorage.removeItem('koperasi_session');}return null;}catch(e){return null;}});
+  const[view,setView]=useState('dashboard');const[orders,setOrders]=useState([]);const[tugas,setTugas]=useState([]);const[pngrm,setPngrm]=useState([]);const[allUsers,setAllUsers]=useState([]);const[kerugian,setKerugian]=useState([]);const[loading,setLoading]=useState(false);const[error,setError]=useState(null);
 
-  // Refresh session timestamp setiap interaksi
-  useEffect(()=>{
-    if (!user) return;
-    const refresh = () => {
-      try { localStorage.setItem('koperasi_session', JSON.stringify({user, ts: Date.now()})); } catch(e){}
-    };
-    refresh();
-    const events = ['click','keydown','scroll','touchstart'];
-    events.forEach(e => window.addEventListener(e, refresh, {passive:true}));
-    return () => events.forEach(e => window.removeEventListener(e, refresh));
-  },[user]);
+  // Session refresh on activity
+  useEffect(()=>{if(!user)return;const refresh=()=>{try{localStorage.setItem('koperasi_session',JSON.stringify({user,ts:Date.now()}))}catch(e){}};refresh();const events=['click','keydown','scroll','touchstart'];events.forEach(e=>window.addEventListener(e,refresh,{passive:true}));return()=>events.forEach(e=>window.removeEventListener(e,refresh));},[user]);
 
-  const stafBeli = allUsers.filter(x=>x.role==='staf_beli').map(x=>({id:x.username, nama:x.name}));
+  const stafBeli=allUsers.filter(x=>x.role==='staf_beli').map(x=>({id:x.username,nama:x.name}));
 
-  const loadAll = useCallback(async () => {
-    setLoading(true); setError(null);
-    try {
-      const [o, t, p, u] = await Promise.all([
-        api.get('getOrders'),
-        api.get('getTugasBeli'),
-        api.get('getPengiriman'),
-        api.get('getUsers'),
-      ]);
-      if (!Array.isArray(o)) throw new Error(o.error || 'getOrders gagal');
-      setOrders(o);
-      setTugas(Array.isArray(t) ? t : []);
-      setPngrm(Array.isArray(p) ? p : []);
-      setAllUsers(Array.isArray(u) ? u : []);
-    } catch(e) { setError(e.message); }
-    setLoading(false);
-  }, []);
+  const loadAll=useCallback(async()=>{
+    setLoading(true);setError(null);
+    try{const[o,t,p,u,k]=await Promise.all([api.get('getOrders'),api.get('getTugasBeli'),api.get('getPengiriman'),api.get('getUsers'),api.get('getKerugian')]);
+      if(!Array.isArray(o))throw new Error(o.error||'getOrders gagal');
+      setOrders(o);setTugas(Array.isArray(t)?t:[]);setPngrm(Array.isArray(p)?p:[]);setAllUsers(Array.isArray(u)?u:[]);setKerugian(Array.isArray(k)?k:[]);
+    }catch(e){setError(e.message);}setLoading(false);
+  },[]);
 
-  useEffect(() => { if (user) loadAll(); }, [user, loadAll]);
+  useEffect(()=>{if(user)loadAll();},[user,loadAll]);
 
-  const login  = u => { try{localStorage.setItem('koperasi_session',JSON.stringify({user:u,ts:Date.now()}))}catch(e){} setUser(u); setView(navItems(u.role)[0]?.id || 'dashboard'); };
-  const logout = () => { localStorage.removeItem('koperasi_session'); setUser(null); setOrders([]); setTugas([]); setPngrm([]); setAllUsers([]); setError(null); };
-  const isAdmin = user?.role === 'admin';
+  const login=u=>{try{localStorage.setItem('koperasi_session',JSON.stringify({user:u,ts:Date.now()}))}catch(e){}setUser(u);setView(navItems(u.role)[0]?.id||'dashboard');};
+  const logout=()=>{localStorage.removeItem('koperasi_session');setUser(null);setOrders([]);setTugas([]);setPngrm([]);setAllUsers([]);setKerugian([]);setError(null);};
+  const isAdmin=user?.role==='admin';
 
-  const handleCancelOrder = (orderId) => {
-    setOrders(prev=>prev.map(o=>o.id===orderId?{...o,status:'cancelled'}:o));
-    api.post({action:'updateOrderStatus', orderId, status:'cancelled'});
-  };
+  const handleCancelOrder=(orderId)=>{setOrders(prev=>prev.map(o=>o.id===orderId?{...o,status:'cancelled'}:o));api.post({action:'updateOrderStatus',orderId,status:'cancelled'});};
 
-  if (!user) return <Login onLogin={login}/>;
+  if(!user)return<Login onLogin={login}/>;
 
-  const renderView = () => {
-    switch(view) {
-      case 'dashboard':
-        return <Dashboard orders={orders} loading={loading} error={error} onRefresh={loadAll} onCancelOrder={handleCancelOrder} isAdmin={isAdmin}/>;
-      case 'input_order':
-        return <InputOrder onOrderAdded={o=>setOrders(p=>[...p,o])} setView={setView}/>;
-      case 'rekap_beli':
-        return <RekapBeli orders={orders} tugasBeli={tugas} stafBeli={stafBeli} allUsers={allUsers} onTugasSaved={(t,tgl)=>setTugas(p=>[...p.filter(x=>normDate(x.tanggal)!==tgl),...t])}/>;
-      case 'surat_jalan':
-        return <SuratJalan orders={orders}/>;
-      case 'laporan':
-      case 'laporan_dapur':
-      case 'laporan_item':
-        return <Laporan orders={orders}/>;
-      case 'tugas_beli':
-      case 'histori_beli':
-        return <TugasBeli user={user} tugasBeli={tugas} allUsers={allUsers}
-          onStatusChanged={(id,status)=>setTugas(p=>p.map(t=>t.id===id?{...t,status}:t))}
-          onHargaSaved={(id,h)=>setTugas(p=>p.map(t=>t.id===id?{...t,harga_beli:h,status:'done'}:t))}/>;
-      case 'pengiriman':
-        return <PengirimanView user={user} orders={orders} pengiriman={pngrm} onKonfirmasi={pid=>setPngrm(p=>p.map(x=>x.id===pid?{...x,status:'delivered'}:x))}/>;
-      case 'kelola_akun':
-        return <KelolaAkun allUsers={allUsers} onUsersChanged={setAllUsers}/>;
-      default:
-        return <Dashboard orders={orders} loading={loading} error={error} onRefresh={loadAll} onCancelOrder={handleCancelOrder} isAdmin={isAdmin}/>;
+  const renderView=()=>{
+    switch(view){
+      case 'dashboard':return<Dashboard orders={orders} loading={loading} error={error} onRefresh={loadAll} onCancelOrder={handleCancelOrder} isAdmin={isAdmin}/>;
+      case 'input_order':return<InputOrder onOrderAdded={o=>setOrders(p=>[...p,o])} setView={setView}/>;
+      case 'rekap_beli':return<RekapBeli orders={orders} tugasBeli={tugas} stafBeli={stafBeli} allUsers={allUsers} onTugasSaved={(t,tgl)=>setTugas(p=>[...p.filter(x=>normDate(x.tanggal)!==tgl),...t])}/>;
+      case 'surat_jalan':return<SuratJalan orders={orders} pengiriman={pngrm}/>;
+      case 'laporan':case 'laporan_dapur':case 'laporan_item':return<Laporan orders={orders} kerugian={kerugian} onKerugianAdded={k=>setKerugian(p=>[...p,k])} onKerugianDeleted={id=>setKerugian(p=>p.filter(k=>k.id!==id))}/>;
+      case 'tugas_beli':case 'histori_beli':return<TugasBeli user={user} tugasBeli={tugas} allUsers={allUsers} orders={orders} onStatusChanged={(id,status)=>setTugas(p=>p.map(t=>t.id===id?{...t,status}:t))} onHargaSaved={(id,h)=>setTugas(p=>p.map(t=>t.id===id?{...t,harga_beli:h,status:'done'}:t))}/>;
+      case 'pengiriman':return<PengirimanView user={user} orders={orders} pengiriman={pngrm} onKonfirmasi={pid=>setPngrm(p=>p.map(x=>x.id===pid?{...x,status:'delivered'}:x))}/>;
+      case 'kelola_akun':return<KelolaAkun allUsers={allUsers} onUsersChanged={setAllUsers}/>;
+      default:return<Dashboard orders={orders} loading={loading} error={error} onRefresh={loadAll} onCancelOrder={handleCancelOrder} isAdmin={isAdmin}/>;
     }
   };
 
-  return (
-    <div style={{display:'flex',minHeight:'100vh'}}>
-      <Sidebar user={user} view={view} setView={setView} onLogout={logout}/>
-      <main style={{flex:1,overflow:'auto',background:'#f3f4f6'}}>{renderView()}</main>
-    </div>
-  );
+  return(<div style={{display:'flex',minHeight:'100vh'}}><Sidebar user={user} view={view} setView={setView} onLogout={logout}/><main style={{flex:1,overflow:'auto',background:'#f3f4f6'}}>{renderView()}</main></div>);
 }
 
-ReactDOM.render(<App/>, document.getElementById('root'));
+ReactDOM.render(<App/>,document.getElementById('root'));
 </script>
 </body>
 </html>
