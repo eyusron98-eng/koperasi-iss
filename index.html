@@ -451,8 +451,9 @@ function RekapBeli({orders, tugasBeli, stafBeli, allUsers, onTugasSaved}) {
     const ro = orders.filter(o=>(o.status==='draft'||o.status==='pending_kirim') && normDate(o.tanggal_kirim)===sd);
     const m = {};
     for (const o of ro) for (const it of o.items) {
-      const k = it.nama+'|'+it.satuan;
-      if (!m[k]) m[k] = {nama:it.nama, satuan:it.satuan, total:0, ords:[]};
+      const k = (it.nama||it.nama_bahan)+'|'+it.satuan;
+      const nama = it.nama||it.nama_bahan;
+      if (!m[k]) m[k] = {nama, satuan:it.satuan, total:0, ords:[]};
       m[k].total += it.qty;
       m[k].ords.push({dapur: DAPUR.find(d=>d.id===o.dapur_id)?.nama, qty:it.qty});
     }
@@ -470,24 +471,46 @@ function RekapBeli({orders, tugasBeli, stafBeli, allUsers, onTugasSaved}) {
     return u ? u.name : stafId;
   };
 
-  const sa = (nm,f,v) => setAsgn(p=>({...p,[nm]:{...(p[nm]||{}),[f]:v}}));
+  // Multi-staff helpers
+  const getAssignments = (nama) => asgn[nama] || [];
+  const addAssignment = (nama, total) => {
+    setAsgn(p => {
+      const cur = p[nama] || [];
+      const used = cur.reduce((s,a)=>s+(parseFloat(a.qty)||0),0);
+      const remaining = total - used;
+      return {...p, [nama]: [...cur, {staf:'', qty: remaining > 0 ? remaining : 0}]};
+    });
+  };
+  const removeAssignment = (nama, idx) => {
+    setAsgn(p => ({...p, [nama]: (p[nama]||[]).filter((_,i)=>i!==idx)}));
+  };
+  const updateAssignment = (nama, idx, field, value) => {
+    setAsgn(p => ({...p, [nama]: (p[nama]||[]).map((a,i)=>i===idx?{...a,[field]:value}:a)}));
+  };
 
   const handleSave = async () => {
-    const tugas = ri.filter(it=>asgn[it.nama]?.staf).map(it=>({
-      id:'tgs-'+Date.now()+'-'+it.nama.replace(/\s/g,''),
-      tanggal: sd,
-      staf_id: asgn[it.nama].staf,
-      nama_bahan: it.nama,
-      qty: parseFloat(asgn[it.nama].qty)||it.total,
-      satuan: it.satuan,
-      harga_beli: 0,
-      status: 'pending'
-    }));
+    const tugas = [];
+    for (const it of ri) {
+      const assignments = getAssignments(it.nama);
+      for (const a of assignments) {
+        if (!a.staf) continue;
+        tugas.push({
+          id:'tgs-'+Date.now()+'-'+Math.random().toString(36).slice(2,7),
+          tanggal: sd,
+          staf_id: a.staf,
+          nama_bahan: it.nama,
+          qty: parseFloat(a.qty)||0,
+          satuan: it.satuan,
+          harga_beli: 0,
+          status: 'pending'
+        });
+      }
+    }
     if (!tugas.length) { alert('Pilih staf untuk minimal satu item'); return; }
     setSaving(true);
     try {
       const res = await api.post({action:'saveTugasBeli', tugas, tanggal:sd});
-      if (res.success) { onTugasSaved(tugas, sd); alert('Tugas tersimpan! '+tugas.length+' item.'); }
+      if (res.success) { onTugasSaved(tugas, sd); alert('Tugas tersimpan! '+tugas.length+' penugasan.'); }
       else alert('Gagal: '+(res.error||''));
     } catch(e) { alert('Koneksi bermasalah'); }
     setSaving(false);
@@ -497,8 +520,9 @@ function RekapBeli({orders, tugasBeli, stafBeli, allUsers, onTugasSaved}) {
     const lines = ['*Tugas Beli Bahan - '+sd+'*', ''];
     const byStaf = {};
     for (const it of ri) {
-      const a = asgn[it.nama];
-      if (a?.staf) {
+      const assignments = getAssignments(it.nama);
+      for (const a of assignments) {
+        if (!a.staf) continue;
         const sn = stafBeli.find(s=>s.id===a.staf)?.nama || a.staf;
         if (!byStaf[sn]) byStaf[sn] = [];
         byStaf[sn].push(`• ${it.nama}: ${parseFloat(a.qty)||it.total} ${it.satuan}`);
@@ -551,34 +575,48 @@ function RekapBeli({orders, tugasBeli, stafBeli, allUsers, onTugasSaved}) {
           <div style={{...C.met,padding:'2rem',textAlign:'center',color:'#6b7280'}}>Tidak ada order aktif untuk tanggal {sd}</div>
         ) : (
           <>
-            <div style={C.card}>
-              <div style={{fontSize:'14px',fontWeight:500,marginBottom:'12px'}}>Total Kebutuhan — {ri.length} item</div>
-              <div style={{overflowX:'auto'}}>
-                <table style={{width:'100%'}}>
-                  <thead><tr style={{borderBottom:'1px solid #e5e7eb'}}>
-                    {['Bahan','Total','Sat','Rincian per Dapur','Staf','Qty Beli'].map((h,i)=>(
-                      <th key={i} style={{...C.th,textAlign:i===1||i===2?'right':'left'}}>{h}</th>
-                    ))}
-                  </tr></thead>
-                  <tbody>
-                    {ri.map(it=>(
-                      <tr key={it.nama} style={{borderBottom:'1px solid #f9fafb'}}>
-                        <td style={{...C.td,fontWeight:500}}>{it.nama}</td>
-                        <td style={{...C.td,textAlign:'right',color:'#1e40af',fontWeight:600}}>{it.total}</td>
-                        <td style={{...C.td,textAlign:'right',color:'#6b7280'}}>{it.satuan}</td>
-                        <td style={{...C.td,fontSize:'11px',color:'#6b7280'}}>{it.ords.map(o=>`${o.dapur}: ${o.qty}`).join(' · ')}</td>
-                        <td style={C.td}>
-                          <select value={asgn[it.nama]?.staf||''} onChange={e=>sa(it.nama,'staf',e.target.value)} style={{fontSize:'12px',padding:'4px'}}>
-                            <option value="">— Pilih —</option>
-                            {stafBeli.map(s=><option key={s.id} value={s.id}>{s.nama}</option>)}
-                          </select>
-                        </td>
-                        <td style={C.td}><input type="number" defaultValue={it.total} onChange={e=>sa(it.nama,'qty',e.target.value)} style={{width:'65px',textAlign:'right',padding:'4px',fontSize:'12px'}}/></td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+            <div style={{display:'flex',flexDirection:'column',gap:'10px'}}>
+              {ri.map(it=>{
+                const assignments = getAssignments(it.nama);
+                const usedQty = assignments.reduce((s,a)=>s+(parseFloat(a.qty)||0),0);
+                const remaining = it.total - usedQty;
+                return (
+                  <div key={it.nama} style={{...C.card,border:'1px solid #e5e7eb'}}>
+                    <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:'8px'}}>
+                      <div>
+                        <div style={{fontWeight:600,fontSize:'14px'}}>{it.nama}</div>
+                        <div style={{fontSize:'12px',color:'#6b7280',marginTop:'2px'}}>Total: <strong style={{color:'#1e40af'}}>{it.total} {it.satuan}</strong> · {it.ords.map(o=>`${o.dapur}: ${o.qty}`).join(' · ')}</div>
+                      </div>
+                      <button onClick={()=>addAssignment(it.nama, it.total)} style={{...btn('pri'),padding:'4px 10px',fontSize:'11px',whiteSpace:'nowrap'}}>+ Staf</button>
+                    </div>
+                    {assignments.length > 0 && (
+                      <div style={{display:'flex',flexDirection:'column',gap:'6px'}}>
+                        {assignments.map((a,idx)=>(
+                          <div key={idx} style={{display:'flex',gap:'8px',alignItems:'center',padding:'6px 8px',background:'#f9fafb',borderRadius:'6px'}}>
+                            <select value={a.staf} onChange={e=>updateAssignment(it.nama,idx,'staf',e.target.value)} style={{fontSize:'12px',padding:'5px',flex:'1',minWidth:'100px'}}>
+                              <option value="">— Pilih Staf —</option>
+                              {stafBeli.map(s=><option key={s.id} value={s.id}>{s.nama}</option>)}
+                            </select>
+                            <div style={{display:'flex',alignItems:'center',gap:'4px'}}>
+                              <input type="number" value={a.qty} onChange={e=>updateAssignment(it.nama,idx,'qty',e.target.value)} style={{width:'75px',textAlign:'right',padding:'5px',fontSize:'12px'}}/>
+                              <span style={{fontSize:'11px',color:'#6b7280'}}>{it.satuan}</span>
+                            </div>
+                            <button onClick={()=>removeAssignment(it.nama,idx)} style={{fontSize:'16px',color:'#991b1b',background:'none',border:'none',cursor:'pointer',padding:'0 4px',lineHeight:1}}>×</button>
+                          </div>
+                        ))}
+                        {Math.abs(remaining) > 0.01 && (
+                          <div style={{fontSize:'11px',color:remaining>0?'#92400e':'#991b1b',padding:'2px 8px'}}>
+                            {remaining > 0 ? `⚠️ Sisa ${remaining.toFixed(1)} ${it.satuan} belum ditugaskan` : `⚠️ Kelebihan ${Math.abs(remaining).toFixed(1)} ${it.satuan}`}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                    {assignments.length === 0 && (
+                      <div style={{fontSize:'12px',color:'#9ca3af',fontStyle:'italic'}}>Klik "+ Staf" untuk menugaskan pembelian</div>
+                    )}
+                  </div>
+                );
+              })}
             </div>
             <div style={{display:'flex',gap:'8px',marginTop:'1rem'}}>
               <button onClick={handleSave} disabled={saving} style={{...btn('suc'),opacity:saving?0.6:1}}>{saving?'Menyimpan...':'Simpan Tugas Beli'}</button>
@@ -628,18 +666,11 @@ function TugasBeli({user, tugasBeli, allUsers, onStatusChanged, onHargaSaved}) {
   const [hi, setHi]       = useState({});
   const [saving, setSaving] = useState({});
   const [konfirm, setKonfirm] = useState({});
+  const [selDate, setSelDate] = useState(todayLocal());
   const today = todayLocal();
 
-  // Tampilkan tugas 3 hari terakhir yang belum selesai, PLUS semua tugas hari ini
-  // Ini mengatasi masalah timezone di mana tanggal bisa bergeser 1 hari
-  const semuaTugas = tugasBeli.filter(t => {
-    const tgl = normDate(t.tanggal);
-    // Hitung selisih hari
-    const diffMs = new Date(today) - new Date(tgl);
-    const diffDays = Math.floor(diffMs / (1000*60*60*24));
-    // Tampilkan: hari ini, kemarin (antisipasi timezone), dan besok
-    return diffDays >= -1 && diffDays <= 2;
-  });
+  // Filter tugas berdasarkan tanggal yang dipilih
+  const semuaTugas = tugasBeli.filter(t => normDate(t.tanggal) === selDate);
   const myTugas    = semuaTugas.filter(t => String(t.staf_id) === String(user.u));
   const otherTugas = semuaTugas.filter(t => String(t.staf_id) !== String(user.u));
 
@@ -647,9 +678,25 @@ function TugasBeli({user, tugasBeli, allUsers, onStatusChanged, onHargaSaved}) {
   const bought = semuaTugas.filter(t=>t.status==='bought'||t.status==='done').length;
   const done   = semuaTugas.filter(t=>t.status==='done').length;
 
+  // Cari tanggal-tanggal yang punya tugas untuk navigasi cepat
+  const availDates = useMemo(()=>{
+    const ds = new Set();
+    tugasBeli.forEach(t=>{ const d=normDate(t.tanggal); if(d) ds.add(d); });
+    return [...ds].sort().reverse();
+  },[tugasBeli]);
+
   const getNama = (stafId) => {
     const u = (allUsers||[]).find(x=>x.username===stafId||x.id===stafId);
     return u ? u.name : stafId;
+  };
+
+  const prevDay = () => {
+    const d = new Date(selDate+'T00:00:00'); d.setDate(d.getDate()-1);
+    setSelDate(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`);
+  };
+  const nextDayNav = () => {
+    const d = new Date(selDate+'T00:00:00'); d.setDate(d.getDate()+1);
+    setSelDate(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`);
   };
 
   const handleBeli = async (t) => {
@@ -682,13 +729,34 @@ function TugasBeli({user, tugasBeli, allUsers, onStatusChanged, onHargaSaved}) {
 
   return (
     <div style={{padding:'1.5rem',maxWidth:'720px'}}>
-      <h2 style={{marginBottom:'4px'}}>Tugas Beli Hari Ini</h2>
-      <div style={{fontSize:'13px',color:'#6b7280',marginBottom:'1rem'}}>Halo {user.name}! · {today}</div>
+      <h2 style={{marginBottom:'4px'}}>Tugas Beli</h2>
+      <div style={{fontSize:'13px',color:'#6b7280',marginBottom:'1rem'}}>Halo {user.name}!</div>
+
+      <div style={{...C.card,marginBottom:'1rem',display:'flex',alignItems:'center',justifyContent:'space-between',gap:'8px'}}>
+        <button onClick={prevDay} style={{...btn(),padding:'6px 12px',fontSize:'16px'}}>‹</button>
+        <div style={{display:'flex',alignItems:'center',gap:'8px',flex:1,justifyContent:'center'}}>
+          <input type="date" value={selDate} onChange={e=>setSelDate(e.target.value)} style={{fontSize:'13px'}}/>
+          {selDate===today && <span style={{...bdg('suc'),fontSize:'10px'}}>Hari ini</span>}
+          {selDate!==today && <button onClick={()=>setSelDate(today)} style={{fontSize:'11px',color:'#1e40af',background:'none',border:'none',cursor:'pointer',textDecoration:'underline'}}>Hari ini</button>}
+        </div>
+        <button onClick={nextDayNav} style={{...btn(),padding:'6px 12px',fontSize:'16px'}}>›</button>
+      </div>
+
+      {availDates.length > 0 && (
+        <div style={{display:'flex',gap:'4px',flexWrap:'wrap',marginBottom:'1rem'}}>
+          {availDates.slice(0,7).map(d=>(
+            <button key={d} onClick={()=>setSelDate(d)} style={{padding:'3px 8px',fontSize:'11px',borderRadius:'12px',border:d===selDate?'1.5px solid #3b82f6':'1px solid #e5e7eb',background:d===selDate?'#dbeafe':'#fff',color:d===selDate?'#1e40af':'#6b7280',cursor:'pointer'}}>
+              {d===today?'Hari ini':d.slice(5)}
+              {tugasBeli.filter(t=>normDate(t.tanggal)===d&&String(t.staf_id)===String(user.u)&&t.status!=='done').length > 0 && <span style={{color:'#dc2626'}}> •</span>}
+            </button>
+          ))}
+        </div>
+      )}
 
       {total > 0 && (
         <div style={{...C.card,marginBottom:'1rem'}}>
           <div style={{display:'flex',justifyContent:'space-between',marginBottom:'6px'}}>
-            <span style={{fontSize:'13px',fontWeight:500}}>Progress hari ini</span>
+            <span style={{fontSize:'13px',fontWeight:500}}>Progress {selDate===today?'hari ini':selDate.slice(5)}</span>
             <span style={{fontSize:'12px',color:'#6b7280'}}>{done}/{total} selesai</span>
           </div>
           <div style={{height:'8px',background:'#f3f4f6',borderRadius:'4px',overflow:'hidden',marginBottom:'8px'}}>
@@ -703,7 +771,7 @@ function TugasBeli({user, tugasBeli, allUsers, onStatusChanged, onHargaSaved}) {
       )}
 
       {!myTugas.length ? (
-        <div style={{...C.met,padding:'2rem',textAlign:'center',color:'#6b7280',marginBottom:'1rem'}}>Belum ada tugas yang ditugaskan untukmu hari ini.</div>
+        <div style={{...C.met,padding:'2rem',textAlign:'center',color:'#6b7280',marginBottom:'1rem'}}>Belum ada tugas untuk tanggal {selDate}.</div>
       ) : (
         <>
           <div style={{fontSize:'13px',fontWeight:500,color:'#374151',marginBottom:'8px'}}>Tugasmu ({myTugas.length} item)</div>
@@ -1147,7 +1215,17 @@ function KelolaAkun({allUsers, onUsersChanged}) {
 // MAIN APP
 // =============================================
 function App() {
-  const [user, setUser]         = useState(null);
+  const [user, setUser]         = useState(()=>{
+    try {
+      const saved = localStorage.getItem('koperasi_session');
+      if (saved) {
+        const {user: u, ts} = JSON.parse(saved);
+        if (Date.now() - ts < 30 * 60 * 1000) return u; // 30 menit
+        localStorage.removeItem('koperasi_session');
+      }
+    } catch(e){}
+    return null;
+  });
   const [view, setView]         = useState('dashboard');
   const [orders, setOrders]     = useState([]);
   const [tugas, setTugas]       = useState([]);
@@ -1155,6 +1233,18 @@ function App() {
   const [allUsers, setAllUsers] = useState([]);
   const [loading, setLoading]   = useState(false);
   const [error, setError]       = useState(null);
+
+  // Refresh session timestamp setiap interaksi
+  useEffect(()=>{
+    if (!user) return;
+    const refresh = () => {
+      try { localStorage.setItem('koperasi_session', JSON.stringify({user, ts: Date.now()})); } catch(e){}
+    };
+    refresh();
+    const events = ['click','keydown','scroll','touchstart'];
+    events.forEach(e => window.addEventListener(e, refresh, {passive:true}));
+    return () => events.forEach(e => window.removeEventListener(e, refresh));
+  },[user]);
 
   const stafBeli = allUsers.filter(x=>x.role==='staf_beli').map(x=>({id:x.username, nama:x.name}));
 
@@ -1178,8 +1268,8 @@ function App() {
 
   useEffect(() => { if (user) loadAll(); }, [user, loadAll]);
 
-  const login  = u => { setUser(u); setView(navItems(u.role)[0]?.id || 'dashboard'); };
-  const logout = () => { setUser(null); setOrders([]); setTugas([]); setPngrm([]); setAllUsers([]); setError(null); };
+  const login  = u => { try{localStorage.setItem('koperasi_session',JSON.stringify({user:u,ts:Date.now()}))}catch(e){} setUser(u); setView(navItems(u.role)[0]?.id || 'dashboard'); };
+  const logout = () => { localStorage.removeItem('koperasi_session'); setUser(null); setOrders([]); setTugas([]); setPngrm([]); setAllUsers([]); setError(null); };
   const isAdmin = user?.role === 'admin';
 
   const handleCancelOrder = (orderId) => {
