@@ -333,8 +333,13 @@ function RekapBeli({orders,tugasBeli,stafBeli,allUsers,onTugasSaved,userRole,onR
       ))}
 
       {tab==='monitor' && (!tugasH.length ? <div style={{...S_met,padding:'2rem',textAlign:'center',color:'var(--muted)'}}>Belum ada tugas untuk {sd}</div> :
-        <div style={S_card}><div style={{overflowX:'auto',margin:'0 -16px',padding:'0 16px'}}><table><thead><tr style={{borderBottom:'2px solid var(--border)'}}>{['Staf','Bahan','Qty','Status','Harga Beli'].map((h,i)=><th key={i} style={{...S_th,textAlign:i>=3?'right':'left'}}>{h}</th>)}</tr></thead>
-        <tbody>{tugasH.map(t=><tr key={t.id}><td style={{...S_td,fontWeight:600}}>{getNm(t.staf_id)}</td><td style={S_td}>{t.nama_bahan}</td><td style={{...S_td,color:'var(--muted)'}}>{t.qty} {t.satuan}</td><td style={{...S_td,textAlign:'right'}}>{tsI(t.status)}</td><td style={{...S_td,textAlign:'right',fontWeight:600,color:t.status==='done'?'var(--green-dk)':'var(--muted)'}}>{t.status==='done'?fRp(t.harga_beli):'—'}</td></tr>)}</tbody></table></div></div>
+        <div style={S_card}><div style={{overflowX:'auto',margin:'0 -16px',padding:'0 16px'}}><table><thead><tr style={{borderBottom:'2px solid var(--border)'}}>{['Staf','Bahan','Qty','Status','H. Jual','H. Beli','Margin'].map((h,i)=><th key={i} style={{...S_th,textAlign:i>=4?'right':'left'}}>{h}</th>)}</tr></thead>
+        <tbody>{tugasH.map(t=>{const hjItem=ri.find(x=>x.nama===t.nama_bahan);const hjMax=hjItem?Math.max(...hjItem.hjs):0;const margin=t.status==='done'&&hjMax>0?hjMax-t.harga_beli:null;return(
+          <tr key={t.id}><td style={{...S_td,fontWeight:600}}>{getNm(t.staf_id)}</td><td style={S_td}>{t.nama_bahan}</td><td style={{...S_td,color:'var(--muted)'}}>{t.qty} {t.satuan}</td><td style={S_td}>{tsI(t.status)}</td>
+          <td style={{...S_td,textAlign:'right',color:'var(--blue)',fontWeight:600}}>{hjMax>0?fRp(hjMax):'—'}</td>
+          <td style={{...S_td,textAlign:'right',fontWeight:600,color:t.status==='done'?'var(--green-dk)':'var(--muted)'}}>{t.status==='done'?fRp(t.harga_beli):'—'}</td>
+          <td style={{...S_td,textAlign:'right',fontWeight:700,color:margin!==null?(margin>=0?'var(--green-dk)':'var(--red)'):'var(--muted)'}}>{margin!==null?fRp(margin):'—'}</td>
+          </tr>);})}</tbody></table></div></div>
       )}
 
       {tab==='harga' && <div style={S_card}><div style={{fontSize:'15px',fontWeight:700,marginBottom:'6px'}}>Edit Harga Jual per Dapur</div><div style={{fontSize:'12px',color:'var(--muted)',marginBottom:'16px'}}>Harga bisa berbeda tiap dapur.</div>
