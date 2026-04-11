@@ -419,7 +419,7 @@ function ApprovalPage({orders,onRefresh}){
 
 // ===== TUGAS BELI (Staf) =====
 function TugasBeli({user,tugasBeli,allUsers,orders,onStatusChanged,onHargaSaved}){
-  const[hi,setHi]=useState({});const[sav,setSav]=useState({});const[kon,setKon]=useState({});const[selD,setSelD]=useState(todayStr());
+  const[hi,setHi]=useState({});const[sav,setSav]=useState({});const[kon,setKon]=useState({});const[selD,setSelD]=useState(todayStr());const[editMode,setEditMode]=useState({});
   const today=todayStr();const my=tugasBeli.filter(t=>normDate(t.tanggal)===selD&&String(t.staf_id)===String(user.u));const other=tugasBeli.filter(t=>normDate(t.tanggal)===selD&&String(t.staf_id)!==String(user.u));
   const total=my.length+other.length;const doneN=my.concat(other).filter(t=>t.status==='done').length;
   const avail=useMemo(()=>{const ds=new Set();tugasBeli.forEach(t=>{const d=normDate(t.tanggal);if(d)ds.add(d);});return[...ds].sort().reverse();},[tugasBeli]);
@@ -446,7 +446,11 @@ function TugasBeli({user,tugasBeli,allUsers,orders,onStatusChanged,onHargaSaved}
               </div>
               {t.status==='pending' && <button onClick={()=>beli(t)} disabled={kon[t.id]} style={{...btn('pri',true),padding:'14px',opacity:kon[t.id]?0.6:1}}>{kon[t.id]?'...':'✓ Konfirmasi Sudah Beli'}</button>}
               {t.status==='bought' && <div style={{display:'flex',gap:'10px',alignItems:'flex-end',flexWrap:'wrap'}}><div style={{flex:1,minWidth:'150px'}}><label style={{fontSize:'12px',color:'var(--muted)',display:'block',marginBottom:'6px',fontWeight:600}}>Harga beli per {t.satuan} (Rp):</label><input type="number" placeholder="32000" value={hi[t.id]||''} onChange={e=>setHi(p=>({...p,[t.id]:e.target.value}))} style={{width:'100%',boxSizing:'border-box'}}/></div><button onClick={()=>simpanH(t.id)} disabled={sav[t.id]} style={{...btn('suc'),padding:'12px 20px'}}>{sav[t.id]?'...':'Simpan'}</button></div>}
-              {t.status==='done' && <div style={{fontSize:'14px',color:'var(--green-dk)',fontWeight:600}}>Beli: {fRp(t.harga_beli)}/{t.satuan}{hj&&<span style={{marginLeft:'8px',color:t.harga_beli<hj.max?'var(--green)':'var(--red)',fontSize:'12px'}}>(Margin: {fRp(hj.max-t.harga_beli)})</span>}</div>}
+              {t.status==='done' && !editMode[t.id] && <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',flexWrap:'wrap',gap:'8px'}}>
+                <div style={{fontSize:'14px',color:'var(--green-dk)',fontWeight:600}}>Beli: {fRp(t.harga_beli)}/{t.satuan}{hj&&<span style={{marginLeft:'8px',color:t.harga_beli<hj.max?'var(--green)':'var(--red)',fontSize:'12px'}}>(Margin: {fRp(hj.max-t.harga_beli)})</span>}</div>
+                <button onClick={()=>{setEditMode(p=>({...p,[t.id]:true}));setHi(p=>({...p,[t.id]:String(t.harga_beli)}));}} style={{...btn(),padding:'6px 14px',fontSize:'12px'}}>✏️ Edit Harga</button>
+              </div>}
+              {t.status==='done' && editMode[t.id] && <div style={{display:'flex',gap:'10px',alignItems:'flex-end',flexWrap:'wrap'}}><div style={{flex:1,minWidth:'150px'}}><label style={{fontSize:'12px',color:'var(--muted)',display:'block',marginBottom:'6px',fontWeight:600}}>Edit harga beli per {t.satuan} (Rp):</label><input type="number" value={hi[t.id]||''} onChange={e=>setHi(p=>({...p,[t.id]:e.target.value}))} style={{width:'100%',boxSizing:'border-box'}}/></div><button onClick={()=>{simpanH(t.id);setEditMode(p=>({...p,[t.id]:false}));}} disabled={sav[t.id]} style={{...btn('suc'),padding:'12px 20px'}}>{sav[t.id]?'...':'Simpan'}</button><button onClick={()=>setEditMode(p=>({...p,[t.id]:false}))} style={{...btn(),padding:'12px 14px'}}>Batal</button></div>}
             </div>
           );})}</div>
         </React.Fragment>
