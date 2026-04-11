@@ -273,14 +273,35 @@ function RekapBeli({orders,tugasBeli,stafBeli,allUsers,onTugasSaved,userRole,onR
   const ordersForDate=useMemo(()=>orders.filter(o=>normDate(o.tanggal_kirim)===sd&&['draft','delivered','rejected'].includes(o.status)),[orders,sd]);
   const tugasH=tugasBeli.filter(t=>normDate(t.tanggal)===sd);const totalT=tugasH.length;const done=tugasH.filter(t=>t.status==='done').length;const belum=totalT-tugasH.filter(t=>t.status==='bought'||t.status==='done').length;
   const getNm=(sid)=>{const u=(allUsers||[]).find(x=>x.username===sid||x.id===sid);return u?u.name:sid;};
+
+  // Load existing tugas into asgn state when date changes or tugasBeli updates
+  useEffect(()=>{
+    const existing=tugasBeli.filter(t=>normDate(t.tanggal)===sd);
+    if(!existing.length){setAsgn({});return;}
+    const built={};
+    for(const t of existing){
+      const nm=t.nama_bahan;
+      if(!built[nm])built[nm]=[];
+      built[nm].push({staf:t.staf_id,qty:t.qty,status:t.status,tugasId:t.id});
+    }
+    setAsgn(built);
+  },[sd,tugasBeli]);
+
   const getA=(nm)=>asgn[nm]||[];
   const addA=(nm,tot2)=>setAsgn(p=>{const c=p[nm]||[];const used=c.reduce((s,a)=>s+(parseFloat(a.qty)||0),0);return{...p,[nm]:[...c,{staf:'',qty:Math.max(0,tot2-used)}]};});
   const rmA=(nm,i)=>setAsgn(p=>({...p,[nm]:(p[nm]||[]).filter((_,j)=>j!==i)}));
   const upA=(nm,i,f,v)=>setAsgn(p=>({...p,[nm]:(p[nm]||[]).map((a,j)=>j===i?{...a,[f]:v}:a)}));
-  const saveTugas=async()=>{const tugas=[];for(const it of ri)for(const a of getA(it.nama)){if(!a.staf)continue;tugas.push({id:'tgs-'+Date.now()+'-'+Math.random().toString(36).slice(2,7),tanggal:sd,staf_id:a.staf,nama_bahan:it.nama,qty:parseFloat(a.qty)||0,satuan:it.satuan});}if(!tugas.length){alert('Pilih staf');return;}setSav(true);try{const r=await api.post({action:'saveTugasBeli',tugas,tanggal:sd});if(r.success){onTugasSaved(tugas,sd);alert('Tersimpan!');}else alert('Gagal');}catch(e){alert('Koneksi');}setSav(false);};
+  const saveTugas=async()=>{const tugas=[];for(const it of ri)for(const a of getA(it.nama)){if(!a.staf)continue;tugas.push({id:a.tugasId||('tgs-'+Date.now()+'-'+Math.random().toString(36).slice(2,7)),tanggal:sd,staf_id:a.staf,nama_bahan:it.nama,qty:parseFloat(a.qty)||0,satuan:it.satuan});}if(!tugas.length){alert('Pilih staf');return;}setSav(true);try{const r=await api.post({action:'saveTugasBeli',tugas,tanggal:sd});if(r.success){onTugasSaved(tugas,sd);alert('Tersimpan!');}else alert('Gagal');}catch(e){alert('Koneksi');}setSav(false);};
   const saveHJ=async(itemId,v)=>{setHjSav(p=>({...p,[itemId]:true}));try{await api.post({action:'updateHargaJual',itemId,hargaJual:parseFloat(v)||0});onRefresh();}catch(e){alert('Gagal');}setHjSav(p=>({...p,[itemId]:false}));};
   const submitAppr=async(oid)=>{setSubSav(p=>({...p,[oid]:true}));try{const r=await api.post({action:'submitForApproval',orderId:oid});if(r.success){alert('Diajukan!');onRefresh();}else alert('Gagal');}catch(e){alert('Koneksi');}setSubSav(p=>({...p,[oid]:false}));};
   const tsI=(s)=>s==='done'?<span style={bdg('suc')}>Harga ✓</span>:s==='bought'?<span style={bdg('war')}>Dibeli</span>:<span style={{...bdg(),background:'var(--bg)',color:'var(--muted)'}}>Belum</span>;
+  const copyWA=()=>{
+    const lines=['*Tugas Beli Bahan — '+sd+'*',''];const byStaf={};
+    for(const it of ri){for(const a of getA(it.nama)){if(!a.staf)continue;const sn=stafBeli.find(s=>s.id===a.staf)?.nama||a.staf;if(!byStaf[sn])byStaf[sn]=[];byStaf[sn].push('• '+it.nama+': '+(parseFloat(a.qty)||it.total)+' '+it.satuan);}}
+    for(const[sn,its]of Object.entries(byStaf)){lines.push('*'+sn+':*');its.forEach(x=>lines.push(x));lines.push('');}
+    if(!Object.keys(byStaf).length){alert('Belum ada tugas yang ditugaskan');return;}
+    if(navigator.clipboard)navigator.clipboard.writeText(lines.join('\n')).then(()=>alert('Teks WA disalin ke clipboard! 📋'));else{const ta=document.createElement('textarea');ta.value=lines.join('\n');document.body.appendChild(ta);ta.select();document.execCommand('copy');document.body.removeChild(ta);alert('Teks WA disalin! 📋');}
+  };
   return(
     <div style={{padding:'16px',maxWidth:'960px',margin:'0 auto'}} className="fade-in">
       <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'16px',flexWrap:'wrap',gap:'8px'}}><h2>Rekap &amp; Tugas Beli</h2><div style={{display:'flex',gap:'8px',alignItems:'center'}}><span style={{fontSize:'12px',color:'var(--muted)',fontWeight:600}}>Kirim:</span><input type="date" value={sd} onChange={e=>setSd(e.target.value)} style={{padding:'8px 10px',fontSize:'14px'}}/></div></div>
@@ -295,15 +316,19 @@ function RekapBeli({orders,tugasBeli,stafBeli,allUsers,onTugasSaved,userRole,onR
                 <div><div style={{fontWeight:700,fontSize:'15px'}}>{it.nama}</div><div style={{fontSize:'12px',color:'var(--muted)',marginTop:'4px'}}>Total: <strong style={{color:'var(--blue)'}}>{it.total} {it.satuan}</strong> · {it.ords.map(o=>o.dapur+': '+o.qty).join(' · ')}</div><div style={{fontSize:'12px',color:'var(--green-dk)',marginTop:'4px',fontWeight:600}}>💰 Jual tertinggi: {fRp(hjMax)}/{it.satuan}</div></div>
                 <button onClick={()=>addA(it.nama,it.total)} style={{...btn('pri'),padding:'8px 14px',fontSize:'12px',whiteSpace:'nowrap'}}>+ Staf</button>
               </div>
-              {as.length>0 && <div style={{display:'flex',flexDirection:'column',gap:'8px'}}>{as.map((a,idx)=><div key={idx} style={{display:'flex',gap:'8px',alignItems:'center',padding:'10px 12px',background:'var(--bg)',borderRadius:'10px',flexWrap:'wrap'}}>
+              {as.length>0 && <div style={{display:'flex',flexDirection:'column',gap:'8px'}}>{as.map((a,idx)=><div key={idx} style={{display:'flex',gap:'8px',alignItems:'center',padding:'10px 12px',background:a.status==='done'?'var(--green-bg)':a.status==='bought'?'var(--yellow-bg)':'var(--bg)',borderRadius:'10px',flexWrap:'wrap',border:a.status?'1.5px solid '+(a.status==='done'?'var(--green)':a.status==='bought'?'var(--yellow)':'var(--border)'):'none'}}>
                 <select value={a.staf} onChange={e=>upA(it.nama,idx,'staf',e.target.value)} style={{fontSize:'14px',padding:'8px 10px',flex:'1',minWidth:'120px'}}><option value="">— Pilih Staf —</option>{stafBeli.map(s=><option key={s.id} value={s.id}>{s.nama}</option>)}</select>
                 <div style={{display:'flex',alignItems:'center',gap:'4px'}}><input type="number" value={a.qty} onChange={e=>upA(it.nama,idx,'qty',e.target.value)} style={{width:'80px',textAlign:'right',padding:'8px 10px'}}/><span style={{fontSize:'12px',color:'var(--muted)'}}>{it.satuan}</span></div>
+                {a.status && <span style={{fontSize:'11px'}}>{tsI(a.status)}</span>}
                 <button onClick={()=>rmA(it.nama,idx)} style={{fontSize:'18px',color:'var(--red)',background:'none',border:'none',cursor:'pointer'}}>×</button>
               </div>)}{Math.abs(rem)>0.01&&<div style={{fontSize:'12px',color:rem>0?'var(--yellow)':'var(--red)',padding:'4px 12px',fontWeight:600}}>{rem>0?'⚠️ Sisa '+rem.toFixed(1)+' belum ditugaskan':'⚠️ Kelebihan '+Math.abs(rem).toFixed(1)}</div>}</div>}
               {as.length===0&&<div style={{fontSize:'13px',color:'var(--muted)',fontStyle:'italic'}}>Klik "+ Staf" untuk menugaskan</div>}
             </div>);
           })}</div>
-          <div style={{marginTop:'16px'}}><button onClick={saveTugas} disabled={sav} style={{...btn('suc'),opacity:sav?0.6:1}}>{sav?'Menyimpan...':'✓ Simpan Tugas'}</button></div>
+          <div style={{display:'flex',gap:'10px',marginTop:'16px',flexWrap:'wrap'}}>
+            <button onClick={saveTugas} disabled={sav} style={{...btn('suc'),opacity:sav?0.6:1}}>{sav?'Menyimpan...':'✓ Simpan Tugas'}</button>
+            <button onClick={copyWA} style={{...btn('war')}}>📋 Salin Teks WA</button>
+          </div>
         </React.Fragment>
       ))}
 
