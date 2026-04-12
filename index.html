@@ -191,16 +191,19 @@ function MobileTopBar({user,onMenu,title}){
 }
 
 // ===== DASHBOARD =====
-function Dashboard({orders,loading,error,onRefresh,onCancelOrder,userRole}){
+function Dashboard({orders,loading,error,onRefresh,onCancelOrder,onDeleteOrder,onReorder,userRole}){
   const isAdmin=userRole==='admin';const canCancel=userRole==='admin'||userRole==='operator';
-  const[cid,setCid]=useState(null);
+  const[cid,setCid]=useState(null);const[did,setDid]=useState(null);const[deleting,setDeleting]=useState(false);
   const tj=orders.reduce((s,o)=>s+o.items.reduce((ss,i)=>ss+i.qty*i.harga_jual,0),0);
   const tb=orders.reduce((s,o)=>s+o.items.reduce((ss,i)=>ss+i.qty*i.harga_beli,0),0);
   const pending=orders.filter(o=>o.status==='pending_approval').length;
   const co=orders.find(o=>o.id===cid);const cd=DAPUR.find(d=>d.id===co?.dapur_id);
+  const dOrder=orders.find(o=>o.id===did);const dDapur=DAPUR.find(d=>d.id===dOrder?.dapur_id);
+  const handleDelete=async()=>{setDeleting(true);try{const r=await api.post({action:'deleteOrder',orderId:did});if(r.success){onDeleteOrder(did);setDid(null);alert('Order dihapus.');}else alert('Gagal');}catch(e){alert('Koneksi');}setDeleting(false);};
   return(
     <div style={{padding:'16px',maxWidth:'960px',margin:'0 auto'}} className="fade-in">
       {cid && <div style={{position:'fixed',top:0,left:0,right:0,bottom:0,background:'rgba(0,0,0,0.5)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:1000,padding:'16px'}} onClick={()=>setCid(null)}><div style={{...S_card,maxWidth:'360px',width:'100%',padding:'24px'}} onClick={e=>e.stopPropagation()}><div style={{fontSize:'16px',fontWeight:700,textAlign:'center',marginBottom:'16px'}}>Batalkan Order?</div><div style={{fontSize:'14px',color:'var(--muted)',textAlign:'center',marginBottom:'20px'}}>Order {cd?.nama} tgl {co?.tanggal_kirim}</div><div style={{display:'flex',gap:'10px'}}><button onClick={()=>setCid(null)} style={{...btn(),flex:1}}>Tidak</button><button onClick={()=>{onCancelOrder(cid);setCid(null);}} style={{...btn('dan'),flex:1}}>Ya, Batalkan</button></div></div></div>}
+      {did && <div style={{position:'fixed',top:0,left:0,right:0,bottom:0,background:'rgba(0,0,0,0.5)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:1000,padding:'16px'}} onClick={()=>setDid(null)}><div style={{...S_card,maxWidth:'360px',width:'100%',padding:'24px'}} onClick={e=>e.stopPropagation()}><div style={{fontSize:'30px',textAlign:'center',marginBottom:'8px'}}>🗑️</div><div style={{fontSize:'16px',fontWeight:700,textAlign:'center',marginBottom:'8px'}}>Hapus Order Permanen?</div><div style={{fontSize:'13px',color:'var(--muted)',textAlign:'center',marginBottom:'6px'}}>Order <strong>{dDapur?.nama}</strong> · {normDate(dOrder?.tanggal_kirim)}</div><div style={{fontSize:'12px',color:'var(--red)',textAlign:'center',marginBottom:'20px'}}>Data order, item, dan pengiriman akan dihapus. Tidak bisa dikembalikan.</div><div style={{display:'flex',gap:'10px'}}><button onClick={()=>setDid(null)} style={{...btn(),flex:1}}>Batal</button><button onClick={handleDelete} disabled={deleting} style={{...btn('dan'),flex:1}}>{deleting?'Menghapus...':'Ya, Hapus'}</button></div></div></div>}
       <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'20px',flexWrap:'wrap',gap:'8px'}}><h2>Dashboard</h2><button onClick={onRefresh} style={{...btn(),padding:'8px 14px',fontSize:'12px'}}>↻ Refresh</button></div>
       {pending>0&&isAdmin && <div style={{...S_card,marginBottom:'16px',border:'2px solid #c4b5fd',background:'var(--purple-bg)'}}><div style={{fontSize:'14px',fontWeight:700,color:'var(--purple)'}}>🔔 {pending} order menunggu approval</div></div>}
       {error && <div style={{padding:'14px',background:'var(--red-bg)',borderRadius:'var(--radius)',color:'var(--red)',marginBottom:'16px'}}>Gagal: {error}</div>}
@@ -213,9 +216,15 @@ function Dashboard({orders,loading,error,onRefresh,onCancelOrder,userRole}){
             <div style={{...S_met,background:tj-tb>=0?'var(--green-bg)':'var(--red-bg)'}}><div style={{fontSize:'11px',color:'var(--muted)',fontWeight:600}}>Profit</div><div style={{fontSize:'18px',fontWeight:700,color:tj-tb>=0?'var(--green-dk)':'var(--red)'}}>{fRp(tj-tb)}</div></div></React.Fragment>}
           </div>
           <div style={S_card}><div style={{fontSize:'15px',fontWeight:700,marginBottom:'14px'}}>Semua Order</div>
-            <div style={{overflowX:'auto',margin:'0 -16px',padding:'0 16px'}}><table><thead><tr style={{borderBottom:'2px solid var(--border)'}}>{['Dapur','Kirim','Item','Nilai','Status'].map((h,i)=><th key={i} style={{...S_th,textAlign:i===3?'right':'left'}}>{h}</th>)}</tr></thead>
+            <div style={{overflowX:'auto',margin:'0 -16px',padding:'0 16px'}}><table><thead><tr style={{borderBottom:'2px solid var(--border)'}}>{['Dapur','Kirim','Item','Nilai','Status','Aksi'].map((h,i)=><th key={i} style={{...S_th,textAlign:i===3?'right':'left'}}>{h}</th>)}</tr></thead>
             <tbody>{orders.map(o=>{const d=DAPUR.find(x=>x.id===o.dapur_id);const n=o.items.reduce((s,i)=>s+i.qty*i.harga_jual,0);const cc=canCancel&&!['delivered','cancelled','approved'].includes(o.status);
-              return(<tr key={o.id} style={{opacity:o.status==='cancelled'?0.4:1}}><td style={{...S_td,fontWeight:600}}>{d?.nama}</td><td style={{...S_td,color:'var(--muted)',fontSize:'12px'}}>{normDate(o.tanggal_kirim)}</td><td style={{...S_td,color:'var(--muted)'}}>{o.items.length}</td><td style={{...S_td,textAlign:'right',fontWeight:600}}>{fRp(n)}</td><td style={S_td}><div style={{display:'flex',gap:'6px',alignItems:'center',flexWrap:'wrap'}}><StatusBadge status={o.status}/>{cc&&<button onClick={()=>setCid(o.id)} style={{...btn('dan'),padding:'4px 10px',fontSize:'11px'}}>Batal</button>}</div></td></tr>);
+              return(<tr key={o.id} style={{opacity:o.status==='cancelled'?0.4:1}}><td style={{...S_td,fontWeight:600}}>{d?.nama}</td><td style={{...S_td,color:'var(--muted)',fontSize:'12px'}}>{normDate(o.tanggal_kirim)}</td><td style={{...S_td,color:'var(--muted)'}}>{o.items.length}</td><td style={{...S_td,textAlign:'right',fontWeight:600}}>{fRp(n)}</td><td style={S_td}><StatusBadge status={o.status}/></td>
+                <td style={S_td}><div style={{display:'flex',gap:'4px',flexWrap:'wrap'}}>
+                  {cc&&<button onClick={()=>setCid(o.id)} style={{...btn('dan'),padding:'4px 10px',fontSize:'11px'}}>Batal</button>}
+                  {isAdmin&&o.status!=='cancelled'&&<button onClick={()=>{onReorder(o);}} style={{...btn('pri'),padding:'4px 10px',fontSize:'11px'}}>Edit</button>}
+                  {isAdmin&&<button onClick={()=>setDid(o.id)} style={{...btn(),padding:'4px 10px',fontSize:'11px',color:'var(--red)'}}>🗑️</button>}
+                </div></td>
+              </tr>);
             })}</tbody></table></div>
           </div>
         </React.Fragment>
@@ -225,15 +234,23 @@ function Dashboard({orders,loading,error,onRefresh,onCancelOrder,userRole}){
 }
 
 // ===== INPUT ORDER =====
-function InputOrder({onOrderAdded,setView}){
-  const[step,setStep]=useState(1);const[selD,setSelD]=useState('');const[rab,setRab]=useState('');const[items,setItems]=useState([]);const[tO,setTO]=useState(todayStr());const[tK,setTK]=useState(nextDay(todayStr()));const[err,setErr]=useState('');const[sav,setSav]=useState(false);
+function InputOrder({onOrderAdded,setView,editOrder,onClearEdit}){
+  const isEdit=!!editOrder;
+  const[step,setStep]=useState(isEdit?3:1);const[selD,setSelD]=useState(isEdit?editOrder.dapur_id:'');const[rab,setRab]=useState('');
+  const[items,setItems]=useState(isEdit?editOrder.items.map(it=>({nama:it.nama||it.nama_bahan,qty:it.qty,satuan:it.satuan,harga_jual:it.harga_jual,harga_beli:it.harga_beli||0})):[]);
+  const[tO,setTO]=useState(isEdit?normDate(editOrder.tanggal_order):todayStr());const[tK,setTK]=useState(isEdit?normDate(editOrder.tanggal_kirim):nextDay(todayStr()));const[err,setErr]=useState('');const[sav,setSav]=useState(false);
+  // Clean up edit state when unmounting
+  useEffect(()=>()=>{if(onClearEdit)onClearEdit();},[]);
   const parse=()=>{const it=parseRAB(rab);if(!it.length){setErr('Format tidak dikenali.');return;}setErr('');setItems(it);setStep(3);};
   const upd=(idx,f,v)=>setItems(p=>p.map((it,i)=>i===idx?{...it,[f]:f==='qty'?parseFloat(v)||0:parseInt(v)||0}:it));
-  const submit=async()=>{setSav(true);const order={id:'ord-'+Date.now(),dapur_id:selD,tanggal_order:tO,tanggal_kirim:tK,status:'draft',items};try{const r=await api.post({action:'addOrder',order});if(r.success){onOrderAdded(order);alert('Order berhasil!');setView('dashboard');}else alert('Gagal');}catch(e){alert('Koneksi');}setSav(false);};
+  const submit=async()=>{setSav(true);
+    // If editing, delete old order first
+    if(isEdit){try{await api.post({action:'deleteOrder',orderId:editOrder.id});}catch(e){}}
+    const order={id:'ord-'+Date.now(),dapur_id:selD,tanggal_order:tO,tanggal_kirim:tK,status:'draft',items};try{const r=await api.post({action:'addOrder',order});if(r.success){onOrderAdded(order);alert(isEdit?'Order berhasil diperbarui!':'Order berhasil!');setView('dashboard');}else alert('Gagal');}catch(e){alert('Koneksi');}setSav(false);};
   const tot=items.reduce((s,i)=>s+i.qty*i.harga_jual,0);
   return(
     <div style={{padding:'16px',maxWidth:'820px',margin:'0 auto'}} className="fade-in">
-      <h2 style={{marginBottom:'16px'}}>Input Order Baru</h2>
+      <h2 style={{marginBottom:'16px'}}>{isEdit?'Edit Order':'Input Order Baru'}</h2>
       <div style={S_card}>
         {step===1&&(<div>
           <div className="grid-1-mobile" style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'12px',marginBottom:'16px'}}><div><label style={{fontSize:'12px',color:'var(--muted)',display:'block',marginBottom:'6px',fontWeight:600}}>Tanggal Order</label><input type="date" value={tO} onChange={e=>{setTO(e.target.value);setTK(nextDay(e.target.value));}} style={{width:'100%',boxSizing:'border-box'}}/></div><div><label style={{fontSize:'12px',color:'var(--muted)',display:'block',marginBottom:'6px',fontWeight:600}}>Tanggal Kirim</label><input type="date" value={tK} onChange={e=>setTK(e.target.value)} style={{width:'100%',boxSizing:'border-box'}}/></div></div>
@@ -253,7 +270,7 @@ function InputOrder({onOrderAdded,setView}){
           <div style={{overflowX:'auto',margin:'0 -16px',padding:'0 16px'}}><table><thead><tr style={{borderBottom:'2px solid var(--border)'}}>{['Bahan','Qty','Sat','Harga Jual','Subtotal',''].map((h,i)=><th key={i} style={{...S_th,textAlign:i>=3&&i<5?'right':'left'}}>{h}</th>)}</tr></thead>
           <tbody>{items.map((it,idx)=><tr key={idx}><td style={{...S_td,fontWeight:600}}>{it.nama}</td><td style={S_td}><input type="number" value={it.qty} onChange={e=>upd(idx,'qty',e.target.value)} style={{width:'70px',textAlign:'right',padding:'6px',fontSize:'13px'}}/></td><td style={{...S_td,color:'var(--muted)',fontSize:'12px'}}>{it.satuan}</td><td style={{...S_td,textAlign:'right'}}><input type="number" value={it.harga_jual} onChange={e=>upd(idx,'harga_jual',e.target.value)} style={{width:'100px',textAlign:'right',padding:'6px',fontSize:'13px'}}/></td><td style={{...S_td,textAlign:'right',fontWeight:700}}>{fRp(it.qty*it.harga_jual)}</td><td style={S_td}><button onClick={()=>setItems(p=>p.filter((_,i)=>i!==idx))} style={{color:'var(--red)',background:'none',border:'none',cursor:'pointer',fontSize:'16px'}}>×</button></td></tr>)}</tbody>
           <tfoot><tr style={{borderTop:'2px solid var(--border)'}}><td colSpan={4} style={{...S_td,textAlign:'right',fontWeight:700,borderBottom:'none'}}>Total:</td><td style={{...S_td,textAlign:'right',fontWeight:700,fontSize:'16px',color:'var(--blue)',borderBottom:'none'}}>{fRp(tot)}</td><td></td></tr></tfoot></table></div>
-          <div style={{display:'flex',gap:'10px',marginTop:'16px',flexWrap:'wrap'}}><button onClick={()=>setStep(2)} style={btn()}>← Kembali</button><button onClick={submit} disabled={sav} style={{...btn('suc'),opacity:sav?0.6:1}}>{sav?'Menyimpan...':'✓ Simpan Order'}</button></div>
+          <div style={{display:'flex',gap:'10px',marginTop:'16px',flexWrap:'wrap'}}><button onClick={()=>setStep(2)} style={btn()}>← Kembali</button><button onClick={submit} disabled={sav} style={{...btn('suc'),opacity:sav?0.6:1}}>{sav?'Menyimpan...':isEdit?'✓ Update Order':'✓ Simpan Order'}</button></div>
         </div>)}
       </div>
     </div>
@@ -333,6 +350,7 @@ function RekapBeli({orders,tugasBeli,stafBeli,allUsers,onTugasSaved,userRole,onR
       ))}
 
       {tab==='monitor' && (!tugasH.length ? <div style={{...S_met,padding:'2rem',textAlign:'center',color:'var(--muted)'}}>Belum ada tugas untuk {sd}</div> :
+        <React.Fragment>
         <div style={S_card}><div style={{overflowX:'auto',margin:'0 -16px',padding:'0 16px'}}><table><thead><tr style={{borderBottom:'2px solid var(--border)'}}>{['Staf','Bahan','Qty','Status','H. Jual','H. Beli','Margin'].map((h,i)=><th key={i} style={{...S_th,textAlign:i>=4?'right':'left'}}>{h}</th>)}</tr></thead>
         <tbody>{tugasH.map(t=>{const hjItem=ri.find(x=>x.nama===t.nama_bahan);const hjMax=hjItem?Math.max(...hjItem.hjs):0;const margin=t.status==='done'&&hjMax>0?hjMax-t.harga_beli:null;return(
           <tr key={t.id}><td style={{...S_td,fontWeight:600}}>{getNm(t.staf_id)}</td><td style={S_td}>{t.nama_bahan}</td><td style={{...S_td,color:'var(--muted)'}}>{t.qty} {t.satuan}</td><td style={S_td}>{tsI(t.status)}</td>
@@ -340,6 +358,16 @@ function RekapBeli({orders,tugasBeli,stafBeli,allUsers,onTugasSaved,userRole,onR
           <td style={{...S_td,textAlign:'right',fontWeight:600,color:t.status==='done'?'var(--green-dk)':'var(--muted)'}}>{t.status==='done'?fRp(t.harga_beli):'—'}</td>
           <td style={{...S_td,textAlign:'right',fontWeight:700,color:margin!==null?(margin>=0?'var(--green-dk)':'var(--red)'):'var(--muted)'}}>{margin!==null?fRp(margin):'—'}</td>
           </tr>);})}</tbody></table></div></div>
+        <div style={{marginTop:'12px'}}><button onClick={()=>{
+          const belumBeli=tugasH.filter(t=>t.status==='pending');const belumHarga=tugasH.filter(t=>t.status==='bought');
+          if(!belumBeli.length&&!belumHarga.length){alert('Semua tugas sudah selesai!');return;}
+          const lines=['*⚠️ Reminder Tugas Beli — '+sd+'*',''];
+          if(belumBeli.length){lines.push('*❌ Belum Dibeli:*');const byS={};belumBeli.forEach(t=>{const nm=getNm(t.staf_id);if(!byS[nm])byS[nm]=[];byS[nm].push('• '+t.nama_bahan+': '+t.qty+' '+t.satuan);});for(const[s,its]of Object.entries(byS)){lines.push('_'+s+':_');its.forEach(x=>lines.push(x));}lines.push('');}
+          if(belumHarga.length){lines.push('*🟡 Sudah Beli, Belum Isi Harga:*');const byS2={};belumHarga.forEach(t=>{const nm=getNm(t.staf_id);if(!byS2[nm])byS2[nm]=[];byS2[nm].push('• '+t.nama_bahan+': '+t.qty+' '+t.satuan);});for(const[s,its]of Object.entries(byS2)){lines.push('_'+s+':_');its.forEach(x=>lines.push(x));}lines.push('');}
+          lines.push('Mohon segera diselesaikan 🙏');
+          const txt=lines.join('\n');if(navigator.clipboard)navigator.clipboard.writeText(txt).then(()=>alert('Teks reminder disalin! 📋'));else{const ta=document.createElement('textarea');ta.value=txt;document.body.appendChild(ta);ta.select();document.execCommand('copy');document.body.removeChild(ta);alert('Disalin! 📋');}
+        }} style={{...btn('war')}}>📋 Salin Reminder WA (yang belum selesai)</button></div>
+        </React.Fragment>
       )}
 
       {tab==='harga' && <div style={S_card}><div style={{fontSize:'15px',fontWeight:700,marginBottom:'6px'}}>Edit Harga Jual per Dapur</div><div style={{fontSize:'12px',color:'var(--muted)',marginBottom:'16px'}}>Harga bisa berbeda tiap dapur.</div>
@@ -599,12 +627,15 @@ function App(){
   const login=u=>{try{localStorage.setItem('koperasi_session',JSON.stringify({user:u,ts:Date.now()}))}catch(e){}setUser(u);setView(navItems(u.role)[0]?.id||'dashboard');};
   const logout=()=>{localStorage.removeItem('koperasi_session');setUser(null);setOrders([]);setTugas([]);setPngrm([]);setAllUsers([]);setKerugian([]);setError(null);};
   const cancelOrder=(oid)=>{setOrders(p=>p.map(o=>o.id===oid?{...o,status:'cancelled'}:o));api.post({action:'updateOrderStatus',orderId:oid,status:'cancelled'});};
+  const deleteOrder=(oid)=>{setOrders(p=>p.filter(o=>o.id!==oid));};
+  const[editOrder,setEditOrder]=useState(null);
+  const reorder=(o)=>{setEditOrder(o);setView('input_order');};
   if(!user)return <Login onLogin={login}/>;
   const curLabel=navItems(user.role).find(i=>i.id===view)?.label||'';
   const renderView=()=>{
     switch(view){
-      case 'dashboard':return <Dashboard orders={orders} loading={loading} error={error} onRefresh={loadAll} onCancelOrder={cancelOrder} userRole={user.role}/>;
-      case 'input_order':return <InputOrder onOrderAdded={o=>setOrders(p=>[...p,o])} setView={setView}/>;
+      case 'dashboard':return <Dashboard orders={orders} loading={loading} error={error} onRefresh={loadAll} onCancelOrder={cancelOrder} onDeleteOrder={deleteOrder} onReorder={reorder} userRole={user.role}/>;
+      case 'input_order':return <InputOrder onOrderAdded={o=>{setOrders(p=>[...p,o]);setEditOrder(null);}} setView={setView} editOrder={editOrder} onClearEdit={()=>setEditOrder(null)}/>;
       case 'rekap_beli':return <RekapBeli orders={orders} tugasBeli={tugas} stafBeli={stafBeli} allUsers={allUsers} onTugasSaved={(t,d)=>setTugas(p=>[...p.filter(x=>normDate(x.tanggal)!==d),...t])} userRole={user.role} onRefresh={loadAll}/>;
       case 'approval':return <ApprovalPage orders={orders} onRefresh={loadAll}/>;
       case 'surat_jalan':return <SuratJalan orders={orders} pengiriman={pngrm}/>;
@@ -612,7 +643,7 @@ function App(){
       case 'tugas_beli':return <TugasBeli user={user} tugasBeli={tugas} allUsers={allUsers} orders={orders} onStatusChanged={(id,s)=>setTugas(p=>p.map(t=>t.id===id?{...t,status:s}:t))} onHargaSaved={(id,h)=>setTugas(p=>p.map(t=>t.id===id?{...t,harga_beli:h,status:'done'}:t))}/>;
       case 'pengiriman':return <PengirimanView user={user} orders={orders} pengiriman={pngrm} onKonfirmasi={pid=>setPngrm(p=>p.map(x=>x.id===pid?{...x,status:'delivered'}:x))}/>;
       case 'kelola_akun':return <KelolaAkun allUsers={allUsers} onUsersChanged={setAllUsers}/>;
-      default:return <Dashboard orders={orders} loading={loading} error={error} onRefresh={loadAll} onCancelOrder={cancelOrder} userRole={user.role}/>;
+      default:return <Dashboard orders={orders} loading={loading} error={error} onRefresh={loadAll} onCancelOrder={cancelOrder} onDeleteOrder={deleteOrder} onReorder={reorder} userRole={user.role}/>;
     }
   };
   return(
