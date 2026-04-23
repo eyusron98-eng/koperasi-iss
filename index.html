@@ -47,8 +47,8 @@ function nextDay(s){const d=new Date(s+'T00:00:00');d.setDate(d.getDate()+1);ret
 function fRp(n){if(!n||isNaN(n))return'Rp 0';return'Rp '+Math.round(n).toLocaleString('id-ID');}
 function parseRAB(t){const r=[];for(const l of t.trim().split('\n')){if(!l.trim())continue;const p=l.split('\t');if(p.length>=4){const nm=p[0].trim(),qt=parseFloat(p[1].replace(',','.'))||0,st=p[2].trim(),hj=parseInt(p[3].replace(/[^0-9]/g,''))||0;if(nm&&qt>0)r.push({nama:nm,qty:qt,satuan:st,harga_jual:hj,harga_beli:0});}}return r;}
 function navItems(role){
-  if(role==='admin')return[{id:'dashboard',label:'Dashboard',icon:'📊'},{id:'input_order',label:'Input Order',icon:'📝'},{id:'rekap_beli',label:'Rekap Beli',icon:'📋'},{id:'approval',label:'Approval',icon:'✅'},{id:'surat_jalan',label:'Surat Jalan',icon:'🚚'},{id:'laporan',label:'Laporan',icon:'📈'},{id:'kelola_akun',label:'Akun',icon:'👥'}];
-  if(role==='operator')return[{id:'dashboard',label:'Dashboard',icon:'📊'},{id:'input_order',label:'Input Order',icon:'📝'},{id:'rekap_beli',label:'Rekap Beli',icon:'📋'},{id:'surat_jalan',label:'Surat Jalan',icon:'🚚'},{id:'kelola_akun',label:'Akun',icon:'👥'}];
+  if(role==='admin')return[{id:'dashboard',label:'Dashboard',icon:'📊'},{id:'input_order',label:'Input Order',icon:'📝'},{id:'rekap_beli',label:'Rekap Beli',icon:'📋'},{id:'approval',label:'Approval',icon:'✅'},{id:'pengiriman',label:'Pengiriman',icon:'🚚'},{id:'surat_jalan',label:'Surat Jalan',icon:'📄'},{id:'laporan',label:'Laporan',icon:'📈'},{id:'kelola_akun',label:'Akun',icon:'👥'}];
+  if(role==='operator')return[{id:'dashboard',label:'Dashboard',icon:'📊'},{id:'input_order',label:'Input Order',icon:'📝'},{id:'rekap_beli',label:'Rekap Beli',icon:'📋'},{id:'pengiriman',label:'Pengiriman',icon:'🚚'},{id:'surat_jalan',label:'Surat Jalan',icon:'📄'},{id:'kelola_akun',label:'Akun',icon:'👥'}];
   if(role==='staf_beli')return[{id:'tugas_beli',label:'Tugas Beli',icon:'🛒'}];
   if(role==='staf_kirim')return[{id:'pengiriman',label:'Pengiriman',icon:'🚚'}];
   if(role==='ceo'||role==='sekretaris')return[{id:'laporan',label:'Laporan',icon:'📈'}];
@@ -221,8 +221,8 @@ function Dashboard({orders,loading,error,onRefresh,onCancelOrder,onDeleteOrder,o
               return(<tr key={o.id} style={{opacity:o.status==='cancelled'?0.4:1}}><td style={{...S_td,fontWeight:600}}>{d?.nama}</td><td style={{...S_td,color:'var(--muted)',fontSize:'12px'}}>{normDate(o.tanggal_kirim)}</td><td style={{...S_td,color:'var(--muted)'}}>{o.items.length}</td><td style={{...S_td,textAlign:'right',fontWeight:600}}>{fRp(n)}</td><td style={S_td}><StatusBadge status={o.status}/></td>
                 <td style={S_td}><div style={{display:'flex',gap:'4px',flexWrap:'wrap'}}>
                   {cc&&<button onClick={()=>setCid(o.id)} style={{...btn('dan'),padding:'4px 10px',fontSize:'11px'}}>Batal</button>}
-                  {isAdmin&&o.status!=='cancelled'&&<button onClick={()=>{onReorder(o);}} style={{...btn('pri'),padding:'4px 10px',fontSize:'11px'}}>Edit</button>}
-                  {isAdmin&&<button onClick={()=>setDid(o.id)} style={{...btn(),padding:'4px 10px',fontSize:'11px',color:'var(--red)'}}>🗑️</button>}
+                  {canCancel&&o.status!=='cancelled'&&<button onClick={()=>{onReorder(o);}} style={{...btn('pri'),padding:'4px 10px',fontSize:'11px'}}>Edit</button>}
+                  {canCancel&&<button onClick={()=>setDid(o.id)} style={{...btn(),padding:'4px 10px',fontSize:'11px',color:'var(--red)'}}>🗑️</button>}
                 </div></td>
               </tr>);
             })}</tbody></table></div>
@@ -280,7 +280,7 @@ function InputOrder({onOrderAdded,setView,editOrder,onClearEdit}){
 // ===== REKAP & TUGAS BELI =====
 function RekapBeli({orders,tugasBeli,stafBeli,allUsers,onTugasSaved,userRole,onRefresh}){
   const[sd,setSd]=useState(todayStr());const[asgn,setAsgn]=useState({});const[sav,setSav]=useState(false);const[tab,setTab]=useState('bagi');
-  const[editHJ,setEditHJ]=useState({});const[hjSav,setHjSav]=useState({});const[subSav,setSubSav]=useState({});
+  const[editHJ,setEditHJ]=useState({});const[hjSav,setHjSav]=useState({});const[subSav,setSubSav]=useState({});const[search,setSearch]=useState('');
 
   const ri=useMemo(()=>{
     const ro=orders.filter(o=>['draft','pending_kirim','delivered','rejected'].includes(o.status)&&normDate(o.tanggal_kirim)===sd);
@@ -319,15 +319,19 @@ function RekapBeli({orders,tugasBeli,stafBeli,allUsers,onTugasSaved,userRole,onR
     if(!Object.keys(byStaf).length){alert('Belum ada tugas yang ditugaskan');return;}
     if(navigator.clipboard)navigator.clipboard.writeText(lines.join('\n')).then(()=>alert('Teks WA disalin ke clipboard! 📋'));else{const ta=document.createElement('textarea');ta.value=lines.join('\n');document.body.appendChild(ta);ta.select();document.execCommand('copy');document.body.removeChild(ta);alert('Teks WA disalin! 📋');}
   };
+  const sq=search.toLowerCase();
+  const riF=sq?ri.filter(it=>it.nama.toLowerCase().includes(sq)):ri;
+  const tugasF=sq?tugasH.filter(t=>t.nama_bahan.toLowerCase().includes(sq)||getNm(t.staf_id).toLowerCase().includes(sq)):tugasH;
   return(
     <div style={{padding:'16px',maxWidth:'960px',margin:'0 auto'}} className="fade-in">
       <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'16px',flexWrap:'wrap',gap:'8px'}}><h2>Rekap &amp; Tugas Beli</h2><div style={{display:'flex',gap:'8px',alignItems:'center'}}><span style={{fontSize:'12px',color:'var(--muted)',fontWeight:600}}>Kirim:</span><input type="date" value={sd} onChange={e=>setSd(e.target.value)} style={{padding:'8px 10px',fontSize:'14px'}}/></div></div>
       {totalT>0 && <div style={{...S_card,marginBottom:'16px',border:belum>0?'2px solid #fcd34d':'2px solid var(--green)',background:belum>0?'var(--yellow-bg)':'var(--green-bg)'}}><div style={{display:'flex',justifyContent:'space-between',marginBottom:'8px'}}><span style={{fontWeight:700,color:belum>0?'var(--yellow)':'var(--green-dk)'}}>{belum>0?'⚠️ '+belum+' belum dibeli':'✅ Semua dibeli!'}</span><span style={{fontSize:'12px',color:'var(--muted)',fontWeight:600}}>{done}/{totalT} harga terisi</span></div><div style={{height:'6px',background:'rgba(0,0,0,0.1)',borderRadius:'3px',overflow:'hidden'}}><div style={{height:'100%',background:'var(--green)',borderRadius:'3px',width:(totalT>0?(done/totalT)*100:0)+'%'}}/></div></div>}
       <TabBar tabs={[['bagi','Bagi Tugas',0],['monitor','Monitor',belum],['harga','Edit Harga',0],['submit','Approval',0]]} active={tab} onChange={setTab}/>
+      <div style={{marginBottom:'14px'}}><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="🔍 Cari bahan..." style={{width:'100%',boxSizing:'border-box',padding:'10px 14px',fontSize:'14px'}}/></div>
 
-      {tab==='bagi' && (!ri.length ? <div style={{...S_met,padding:'2rem',textAlign:'center',color:'var(--muted)'}}>Tidak ada order untuk {sd}</div> : (
+      {tab==='bagi' && (!riF.length ? <div style={{...S_met,padding:'2rem',textAlign:'center',color:'var(--muted)'}}>{sq?'Tidak ditemukan':'Tidak ada order untuk '+sd}</div> : (
         <React.Fragment>
-          <div style={{display:'flex',flexDirection:'column',gap:'12px'}}>{ri.map(it=>{const as=getA(it.nama);const used=as.reduce((s,a)=>s+(parseFloat(a.qty)||0),0);const rem=it.total-used;const hjMax=Math.max(...it.hjs);
+          <div style={{display:'flex',flexDirection:'column',gap:'12px'}}>{riF.map(it=>{const as=getA(it.nama);const used=as.reduce((s,a)=>s+(parseFloat(a.qty)||0),0);const rem=it.total-used;const hjMax=Math.max(...it.hjs);
             return(<div key={it.nama} style={S_card}>
               <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:'10px',gap:'8px'}}>
                 <div><div style={{fontWeight:700,fontSize:'15px'}}>{it.nama}</div><div style={{fontSize:'12px',color:'var(--muted)',marginTop:'4px'}}>Total: <strong style={{color:'var(--blue)'}}>{it.total} {it.satuan}</strong> · {it.ords.map(o=>o.dapur+': '+o.qty).join(' · ')}</div><div style={{fontSize:'12px',color:'var(--green-dk)',marginTop:'4px',fontWeight:600}}>💰 Jual tertinggi: {fRp(hjMax)}/{it.satuan}</div></div>
@@ -349,10 +353,10 @@ function RekapBeli({orders,tugasBeli,stafBeli,allUsers,onTugasSaved,userRole,onR
         </React.Fragment>
       ))}
 
-      {tab==='monitor' && (!tugasH.length ? <div style={{...S_met,padding:'2rem',textAlign:'center',color:'var(--muted)'}}>Belum ada tugas untuk {sd}</div> :
+      {tab==='monitor' && (!tugasF.length ? <div style={{...S_met,padding:'2rem',textAlign:'center',color:'var(--muted)'}}>{sq?'Tidak ditemukan':'Belum ada tugas untuk '+sd}</div> :
         <React.Fragment>
         <div style={S_card}><div style={{overflowX:'auto',margin:'0 -16px',padding:'0 16px'}}><table><thead><tr style={{borderBottom:'2px solid var(--border)'}}>{['Staf','Bahan','Qty','Status','H. Jual','H. Beli','Margin'].map((h,i)=><th key={i} style={{...S_th,textAlign:i>=4?'right':'left'}}>{h}</th>)}</tr></thead>
-        <tbody>{tugasH.map(t=>{const hjItem=ri.find(x=>x.nama===t.nama_bahan);const hjMax=hjItem?Math.max(...hjItem.hjs):0;const margin=t.status==='done'&&hjMax>0?hjMax-t.harga_beli:null;return(
+        <tbody>{tugasF.map(t=>{const hjItem=ri.find(x=>x.nama===t.nama_bahan);const hjMax=hjItem?Math.max(...hjItem.hjs):0;const margin=t.status==='done'&&hjMax>0?hjMax-t.harga_beli:null;return(
           <tr key={t.id}><td style={{...S_td,fontWeight:600}}>{getNm(t.staf_id)}</td><td style={S_td}>{t.nama_bahan}</td><td style={{...S_td,color:'var(--muted)'}}>{t.qty} {t.satuan}</td><td style={S_td}>{tsI(t.status)}</td>
           <td style={{...S_td,textAlign:'right',color:'var(--blue)',fontWeight:600}}>{hjMax>0?fRp(hjMax):'—'}</td>
           <td style={{...S_td,textAlign:'right',fontWeight:600,color:t.status==='done'?'var(--green-dk)':'var(--muted)'}}>{t.status==='done'?fRp(t.harga_beli):'—'}</td>
@@ -371,7 +375,7 @@ function RekapBeli({orders,tugasBeli,stafBeli,allUsers,onTugasSaved,userRole,onR
       )}
 
       {tab==='harga' && <div style={S_card}><div style={{fontSize:'15px',fontWeight:700,marginBottom:'6px'}}>Edit Harga Jual per Dapur</div><div style={{fontSize:'12px',color:'var(--muted)',marginBottom:'16px'}}>Harga bisa berbeda tiap dapur.</div>
-        {!ri.length?<div style={{padding:'2rem',textAlign:'center',color:'var(--muted)'}}>Tidak ada item</div>:ri.map(it=><div key={it.nama} style={{marginBottom:'16px',padding:'14px',background:'var(--bg)',borderRadius:'12px'}}>
+        {!riF.length?<div style={{padding:'2rem',textAlign:'center',color:'var(--muted)'}}>Tidak ada item</div>:riF.map(it=><div key={it.nama} style={{marginBottom:'16px',padding:'14px',background:'var(--bg)',borderRadius:'12px'}}>
           <div style={{fontWeight:700,marginBottom:'10px'}}>{it.nama} <span style={{fontWeight:400,color:'var(--muted)',fontSize:'13px'}}>({it.total} {it.satuan})</span></div>
           {it.ords.map((o,oi)=>{const cv=editHJ[o.itemId]!==undefined?editHJ[o.itemId]:o.harga_jual;const changed=editHJ[o.itemId]!==undefined&&String(editHJ[o.itemId])!==String(o.harga_jual);return(<div key={oi} style={{display:'flex',gap:'8px',alignItems:'center',marginBottom:'6px',flexWrap:'wrap'}}>
             <span style={{fontSize:'13px',minWidth:'110px',fontWeight:500}}>{o.dapur} ({o.qty}):</span>
@@ -452,7 +456,7 @@ function ApprovalPage({orders,onRefresh}){
 
 // ===== TUGAS BELI (Staf) =====
 function TugasBeli({user,tugasBeli,allUsers,orders,onStatusChanged,onHargaSaved}){
-  const[hi,setHi]=useState({});const[sav,setSav]=useState({});const[kon,setKon]=useState({});const[selD,setSelD]=useState(todayStr());const[editMode,setEditMode]=useState({});
+  const[hi,setHi]=useState({});const[sav,setSav]=useState({});const[kon,setKon]=useState({});const[selD,setSelD]=useState(todayStr());const[editMode,setEditMode]=useState({});const[search,setSearch]=useState('');
   const today=todayStr();const my=tugasBeli.filter(t=>normDate(t.tanggal)===selD&&String(t.staf_id)===String(user.u));const other=tugasBeli.filter(t=>normDate(t.tanggal)===selD&&String(t.staf_id)!==String(user.u));
   const total=my.length+other.length;const doneN=my.concat(other).filter(t=>t.status==='done').length;
   const avail=useMemo(()=>{const ds=new Set();tugasBeli.forEach(t=>{const d=normDate(t.tanggal);if(d)ds.add(d);});return[...ds].sort().reverse();},[tugasBeli]);
@@ -467,10 +471,12 @@ function TugasBeli({user,tugasBeli,allUsers,orders,onStatusChanged,onHargaSaved}
       <DateNav value={selD} onChange={setSelD}/>
       {avail.length>0 && <div style={{display:'flex',gap:'6px',flexWrap:'wrap',marginBottom:'14px',overflowX:'auto',paddingBottom:'4px'}}>{avail.slice(0,7).map(d=><button key={d} onClick={()=>setSelD(d)} style={{padding:'6px 12px',fontSize:'12px',borderRadius:'20px',border:d===selD?'2px solid var(--green)':'1.5px solid var(--border)',background:d===selD?'var(--green-bg)':'#fff',color:d===selD?'var(--green-dk)':'var(--muted)',cursor:'pointer',fontWeight:d===selD?600:400,whiteSpace:'nowrap'}}>{d===today?'Hari ini':d.slice(5)}{tugasBeli.filter(t=>normDate(t.tanggal)===d&&String(t.staf_id)===String(user.u)&&t.status!=='done').length>0&&<span style={{color:'var(--red)'}}> •</span>}</button>)}</div>}
       {total>0 && <div style={{...S_card,marginBottom:'14px'}}><div style={{display:'flex',justifyContent:'space-between',marginBottom:'8px'}}><span style={{fontWeight:700}}>Progress</span><span style={{fontSize:'13px',color:'var(--muted)',fontWeight:600}}>{doneN}/{total}</span></div><div style={{height:'8px',background:'var(--bg)',borderRadius:'4px',overflow:'hidden'}}><div style={{height:'100%',background:'var(--green)',borderRadius:'4px',width:(total>0?(doneN/total)*100:0)+'%'}}/></div></div>}
-      {!my.length ? <div style={{...S_card,padding:'3rem',textAlign:'center',color:'var(--muted)',marginBottom:'14px'}}>Belum ada tugas untuk {selD}</div> : (
+      <div style={{marginBottom:'14px'}}><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="🔍 Cari bahan..." style={{width:'100%',boxSizing:'border-box',padding:'10px 14px',fontSize:'14px'}}/></div>
+      {(()=>{const sq2=search.toLowerCase();const myF=sq2?my.filter(t=>t.nama_bahan.toLowerCase().includes(sq2)):my;const otherF=sq2?other.filter(t=>t.nama_bahan.toLowerCase().includes(sq2)||getNm(t.staf_id).toLowerCase().includes(sq2)):other;return(<React.Fragment>
+      {!myF.length ? <div style={{...S_card,padding:'3rem',textAlign:'center',color:'var(--muted)',marginBottom:'14px'}}>{sq2?'Tidak ditemukan':'Belum ada tugas untuk '+selD}</div> : (
         <React.Fragment>
-          <div style={{fontSize:'14px',fontWeight:700,marginBottom:'10px'}}>Tugasmu ({my.length})</div>
-          <div style={{display:'flex',flexDirection:'column',gap:'10px',marginBottom:'20px'}}>{my.map(t=>{const hj=hjMap[t.nama_bahan];return(
+          <div style={{fontSize:'14px',fontWeight:700,marginBottom:'10px'}}>Tugasmu ({myF.length})</div>
+          <div style={{display:'flex',flexDirection:'column',gap:'10px',marginBottom:'20px'}}>{myF.map(t=>{const hj=hjMap[t.nama_bahan];return(
             <div key={t.id} style={{...S_card,border:t.status==='done'?'2px solid var(--green)':t.status==='bought'?'2px solid #fbbf24':'1.5px solid var(--border)'}}>
               <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:t.status!=='done'?'12px':'0',flexWrap:'wrap',gap:'6px'}}>
                 <div><div style={{fontWeight:700,fontSize:'15px'}}>{t.nama_bahan}</div><div style={{fontSize:'13px',color:'var(--muted)',marginTop:'2px'}}>{t.qty} {t.satuan}</div>
@@ -488,7 +494,8 @@ function TugasBeli({user,tugasBeli,allUsers,orders,onStatusChanged,onHargaSaved}
           );})}</div>
         </React.Fragment>
       )}
-      {other.length>0 && <React.Fragment><div style={{fontSize:'14px',fontWeight:700,marginBottom:'10px'}}>Staf Lain</div><div style={S_card}><div style={{overflowX:'auto'}}><table><thead><tr style={{borderBottom:'2px solid var(--border)'}}>{['Staf','Bahan','Qty','Status'].map((h,i)=><th key={i} style={S_th}>{h}</th>)}</tr></thead><tbody>{other.map(t=><tr key={t.id}><td style={{...S_td,fontWeight:500}}>{getNm(t.staf_id)}</td><td style={S_td}>{t.nama_bahan}</td><td style={{...S_td,color:'var(--muted)'}}>{t.qty} {t.satuan}</td><td style={S_td}>{sI(t.status)}</td></tr>)}</tbody></table></div></div></React.Fragment>}
+      {otherF.length>0 && <React.Fragment><div style={{fontSize:'14px',fontWeight:700,marginBottom:'10px'}}>Staf Lain</div><div style={S_card}><div style={{overflowX:'auto'}}><table><thead><tr style={{borderBottom:'2px solid var(--border)'}}>{['Staf','Bahan','Qty','Status'].map((h,i)=><th key={i} style={S_th}>{h}</th>)}</tr></thead><tbody>{otherF.map(t=><tr key={t.id}><td style={{...S_td,fontWeight:500}}>{getNm(t.staf_id)}</td><td style={S_td}>{t.nama_bahan}</td><td style={{...S_td,color:'var(--muted)'}}>{t.qty} {t.satuan}</td><td style={S_td}>{sI(t.status)}</td></tr>)}</tbody></table></div></div></React.Fragment>}
+      </React.Fragment>);})()}
     </div>
   );
 }
@@ -547,7 +554,7 @@ function SuratJalan({orders,pengiriman}){
 }
 
 // ===== LAPORAN (approved only) =====
-function Laporan({orders,kerugian,onKerugianAdded,onKerugianDeleted}){
+function Laporan({orders,kerugian,onKerugianAdded,onKerugianDeleted,userRole}){
   const today=todayStr();const[df,setDf]=useState(()=>{const d=new Date();d.setDate(d.getDate()-30);return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');});const[dt,setDt]=useState(today);const[tab,setTab]=useState('grafik');
   const[showKF,setShowKF]=useState(false);const[kForm,setKForm]=useState({tanggal:today,nama_bahan:'',biaya:'',keterangan:''});const[kSav,setKSav]=useState(false);
   const fo=orders.filter(o=>{const d=normDate(o.tanggal_kirim);return d>=df&&d<=dt&&o.status==='approved';});
@@ -562,7 +569,7 @@ function Laporan({orders,kerugian,onKerugianAdded,onKerugianDeleted}){
   return(
     <div style={{padding:'16px',maxWidth:'960px',margin:'0 auto'}} className="fade-in">
       <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'16px',flexWrap:'wrap',gap:'10px'}}><h2>Laporan</h2><div style={{display:'flex',gap:'8px',alignItems:'center',flexWrap:'wrap'}}><input type="date" value={df} onChange={e=>setDf(e.target.value)} style={{padding:'8px 10px',fontSize:'13px'}}/><span style={{color:'var(--muted)'}}>→</span><input type="date" value={dt} onChange={e=>setDt(e.target.value)} style={{padding:'8px 10px',fontSize:'13px'}}/></div></div>
-      <div style={{fontSize:'12px',color:'var(--purple)',padding:'10px 14px',background:'var(--purple-bg)',borderRadius:'10px',marginBottom:'14px',fontWeight:600}}>📌 Hanya order yang sudah approved</div>
+      {userRole==='admin'&&<div style={{fontSize:'12px',color:'var(--purple)',padding:'10px 14px',background:'var(--purple-bg)',borderRadius:'10px',marginBottom:'14px',fontWeight:600}}>📌 Hanya order yang sudah approved</div>}
       <div className="grid-1-mobile" style={{display:'grid',gridTemplateColumns:'repeat(5,1fr)',gap:'8px',marginBottom:'16px'}}>{[{l:'Jual',v:fRp(tj),c:'var(--blue)'},{l:'Beli',v:fRp(tb),c:'var(--text)'},{l:'Rugi',v:fRp(totalK),c:'var(--red)'},{l:'Profit',v:fRp(pf),c:pf>=0?'var(--green-dk)':'var(--red)'},{l:'Margin',v:mg+'%',c:'var(--text)'}].map(c=><div key={c.l} style={{...S_card,padding:'12px',textAlign:'center'}}><div style={{fontSize:'10px',color:'var(--muted)',fontWeight:700,textTransform:'uppercase'}}>{c.l}</div><div style={{fontSize:'16px',fontWeight:700,color:c.c,marginTop:'4px'}}>{c.v}</div></div>)}</div>
       {daily.length>=2&&<div style={{...S_card,marginBottom:'14px',background:'linear-gradient(135deg,#eff6ff,#f0fdf4)',border:'none'}}><div style={{fontSize:'14px',fontWeight:700,color:'var(--green)',marginBottom:'6px'}}>📊 Tren</div><div style={{fontSize:'13px'}}>{trendMsg}</div></div>}
       <TabBar tabs={[['grafik','Grafik',0],['harian','Harian',0],['dapur','Dapur',0],['item','Item',0],['kerugian','Kerugian',0]]} active={tab} onChange={setTab}/>
@@ -571,9 +578,9 @@ function Laporan({orders,kerugian,onKerugianAdded,onKerugianDeleted}){
       {tab==='dapur'&&<div style={S_card}><div style={{overflowX:'auto'}}><table><thead><tr style={{borderBottom:'2px solid var(--border)'}}>{['Dapur','Order','Jual','Beli','Profit'].map((h,i)=><th key={i} style={{...S_th,textAlign:i>=2?'right':'left'}}>{h}</th>)}</tr></thead><tbody>{perDapur.map(d=><tr key={d.nama}><td style={{...S_td,fontWeight:600}}>{d.nama}</td><td style={S_td}>{d.ords}</td><td style={{...S_td,textAlign:'right'}}>{fRp(d.j)}</td><td style={{...S_td,textAlign:'right'}}>{fRp(d.b)}</td><td style={{...S_td,textAlign:'right',fontWeight:700,color:d.pf>=0?'var(--green-dk)':'var(--red)'}}>{fRp(d.pf)}</td></tr>)}</tbody></table></div></div>}
       {tab==='item'&&<div style={S_card}><div style={{overflowX:'auto'}}><table><thead><tr style={{borderBottom:'2px solid var(--border)'}}>{['Bahan','Qty','Jual','Beli','Profit'].map((h,i)=><th key={i} style={{...S_th,textAlign:i>=2?'right':'left'}}>{h}</th>)}</tr></thead><tbody>{perItem.map(it=><tr key={it.nama}><td style={{...S_td,fontWeight:500}}>{it.nama}</td><td style={S_td}>{it.qty}</td><td style={{...S_td,textAlign:'right'}}>{fRp(it.j)}</td><td style={{...S_td,textAlign:'right'}}>{fRp(it.b)}</td><td style={{...S_td,textAlign:'right',fontWeight:700,color:it.pf>=0?'var(--green-dk)':'var(--red)'}}>{fRp(it.pf)}</td></tr>)}</tbody></table></div></div>}
       {tab==='kerugian'&&<div>
-        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'12px'}}><div style={{fontWeight:700}}>Kerugian / Ganti Rugi</div><button onClick={()=>setShowKF(x=>!x)} style={btn('dan')}>{showKF?'✕':'+ Tambah'}</button></div>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'12px'}}><div style={{fontWeight:700}}>Kerugian / Ganti Rugi</div>{userRole==='admin'&&<button onClick={()=>setShowKF(x=>!x)} style={btn('dan')}>{showKF?'✕':'+ Tambah'}</button>}</div>
         {showKF&&<div style={{...S_card,marginBottom:'14px',border:'2px solid #fca5a5'}} className="fade-in"><div className="grid-1-mobile" style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:'10px',marginBottom:'12px'}}><div><label style={{fontSize:'11px',color:'var(--muted)',display:'block',marginBottom:'4px',fontWeight:600}}>Tanggal</label><input type="date" value={kForm.tanggal} onChange={e=>setKForm(p=>({...p,tanggal:e.target.value}))} style={{width:'100%',boxSizing:'border-box'}}/></div><div><label style={{fontSize:'11px',color:'var(--muted)',display:'block',marginBottom:'4px',fontWeight:600}}>Bahan *</label><input value={kForm.nama_bahan} onChange={e=>setKForm(p=>({...p,nama_bahan:e.target.value}))} style={{width:'100%',boxSizing:'border-box'}}/></div><div><label style={{fontSize:'11px',color:'var(--muted)',display:'block',marginBottom:'4px',fontWeight:600}}>Biaya (Rp) *</label><input type="number" value={kForm.biaya} onChange={e=>setKForm(p=>({...p,biaya:e.target.value}))} style={{width:'100%',boxSizing:'border-box'}}/></div></div><div style={{marginBottom:'12px'}}><label style={{fontSize:'11px',color:'var(--muted)',display:'block',marginBottom:'4px',fontWeight:600}}>Keterangan</label><input value={kForm.keterangan} onChange={e=>setKForm(p=>({...p,keterangan:e.target.value}))} placeholder="Bawang busuk dll" style={{width:'100%',boxSizing:'border-box'}}/></div><button onClick={addK} disabled={kSav} style={{...btn('dan'),opacity:kSav?0.6:1}}>{kSav?'...':'Simpan'}</button></div>}
-        <div style={S_card}>{!fk.length?<div style={{padding:'2rem',textAlign:'center',color:'var(--muted)'}}>Belum ada kerugian.</div>:<div style={{overflowX:'auto'}}><table><thead><tr style={{borderBottom:'2px solid var(--border)'}}>{['Tanggal','Bahan','Biaya','Ket',''].map((h,i)=><th key={i} style={{...S_th,textAlign:i===2?'right':'left'}}>{h}</th>)}</tr></thead><tbody>{fk.map(k=><tr key={k.id}><td style={S_td}>{normDate(k.tanggal)}</td><td style={{...S_td,fontWeight:500}}>{k.nama_bahan}</td><td style={{...S_td,textAlign:'right',fontWeight:700,color:'var(--red)'}}>{fRp(k.biaya)}</td><td style={{...S_td,color:'var(--muted)',fontSize:'12px'}}>{k.keterangan||'-'}</td><td style={S_td}><button onClick={()=>{if(confirm('Hapus?'))api.post({action:'deleteKerugian',kerugianId:k.id}).then(r=>{if(r.success)onKerugianDeleted(k.id)});}} style={{...btn('dan'),padding:'4px 10px',fontSize:'11px'}}>×</button></td></tr>)}</tbody></table></div>}</div>
+        <div style={S_card}>{!fk.length?<div style={{padding:'2rem',textAlign:'center',color:'var(--muted)'}}>Belum ada kerugian.</div>:<div style={{overflowX:'auto'}}><table><thead><tr style={{borderBottom:'2px solid var(--border)'}}>{['Tanggal','Bahan','Biaya','Ket',''].map((h,i)=><th key={i} style={{...S_th,textAlign:i===2?'right':'left'}}>{h}</th>)}</tr></thead><tbody>{fk.map(k=><tr key={k.id}><td style={S_td}>{normDate(k.tanggal)}</td><td style={{...S_td,fontWeight:500}}>{k.nama_bahan}</td><td style={{...S_td,textAlign:'right',fontWeight:700,color:'var(--red)'}}>{fRp(k.biaya)}</td><td style={{...S_td,color:'var(--muted)',fontSize:'12px'}}>{k.keterangan||'-'}</td><td style={S_td}>{userRole==='admin'&&<button onClick={()=>{if(confirm('Hapus?'))api.post({action:'deleteKerugian',kerugianId:k.id}).then(r=>{if(r.success)onKerugianDeleted(k.id)});}} style={{...btn('dan'),padding:'4px 10px',fontSize:'11px'}}>×</button>}</td></tr>)}</tbody></table></div>}</div>
       </div>}
     </div>
   );
@@ -639,7 +646,7 @@ function App(){
       case 'rekap_beli':return <RekapBeli orders={orders} tugasBeli={tugas} stafBeli={stafBeli} allUsers={allUsers} onTugasSaved={(t,d)=>setTugas(p=>[...p.filter(x=>normDate(x.tanggal)!==d),...t])} userRole={user.role} onRefresh={loadAll}/>;
       case 'approval':return <ApprovalPage orders={orders} onRefresh={loadAll}/>;
       case 'surat_jalan':return <SuratJalan orders={orders} pengiriman={pngrm}/>;
-      case 'laporan':return <Laporan orders={orders} kerugian={kerugian} onKerugianAdded={k=>setKerugian(p=>[...p,k])} onKerugianDeleted={id=>setKerugian(p=>p.filter(k=>k.id!==id))}/>;
+      case 'laporan':return <Laporan orders={orders} kerugian={kerugian} onKerugianAdded={k=>setKerugian(p=>[...p,k])} onKerugianDeleted={id=>setKerugian(p=>p.filter(k=>k.id!==id))} userRole={user.role}/>;
       case 'tugas_beli':return <TugasBeli user={user} tugasBeli={tugas} allUsers={allUsers} orders={orders} onStatusChanged={(id,s)=>setTugas(p=>p.map(t=>t.id===id?{...t,status:s}:t))} onHargaSaved={(id,h)=>setTugas(p=>p.map(t=>t.id===id?{...t,harga_beli:h,status:'done'}:t))}/>;
       case 'pengiriman':return <PengirimanView user={user} orders={orders} pengiriman={pngrm} onKonfirmasi={pid=>setPngrm(p=>p.map(x=>x.id===pid?{...x,status:'delivered'}:x))}/>;
       case 'kelola_akun':return <KelolaAkun allUsers={allUsers} onUsersChanged={setAllUsers}/>;
