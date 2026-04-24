@@ -48,7 +48,7 @@ function fRp(n){if(!n||isNaN(n))return'Rp 0';return'Rp '+Math.round(n).toLocaleS
 function parseRAB(t){const r=[];for(const l of t.trim().split('\n')){if(!l.trim())continue;const p=l.split('\t');if(p.length>=4){const nm=p[0].trim(),qt=parseFloat(p[1].replace(',','.'))||0,st=p[2].trim(),hj=parseInt(p[3].replace(/[^0-9]/g,''))||0;if(nm&&qt>0)r.push({nama:nm,qty:qt,satuan:st,harga_jual:hj,harga_beli:0});}}return r;}
 function navItems(role){
   if(role==='admin')return[{id:'dashboard',label:'Dashboard',icon:'📊'},{id:'input_order',label:'Input Order',icon:'📝'},{id:'rekap_beli',label:'Rekap Beli',icon:'📋'},{id:'approval',label:'Approval',icon:'✅'},{id:'pengiriman',label:'Pengiriman',icon:'🚚'},{id:'surat_jalan',label:'Surat Jalan',icon:'📄'},{id:'laporan',label:'Laporan',icon:'📈'},{id:'kelola_akun',label:'Akun',icon:'👥'}];
-  if(role==='operator')return[{id:'dashboard',label:'Dashboard',icon:'📊'},{id:'input_order',label:'Input Order',icon:'📝'},{id:'rekap_beli',label:'Rekap Beli',icon:'📋'},{id:'pengiriman',label:'Pengiriman',icon:'🚚'},{id:'surat_jalan',label:'Surat Jalan',icon:'📄'},{id:'kelola_akun',label:'Akun',icon:'👥'}];
+  if(role==='operator')return[{id:'dashboard',label:'Dashboard',icon:'📊'},{id:'input_order',label:'Input Order',icon:'📝'},{id:'rekap_beli',label:'Rekap Beli',icon:'📋'},{id:'pengiriman',label:'Pengiriman',icon:'🚚'},{id:'surat_jalan',label:'Surat Jalan',icon:'📄'},{id:'pengeluaran',label:'Pengeluaran',icon:'💸'},{id:'kelola_akun',label:'Akun',icon:'👥'}];
   if(role==='staf_beli')return[{id:'tugas_beli',label:'Tugas Beli',icon:'🛒'}];
   if(role==='staf_kirim')return[{id:'pengiriman',label:'Pengiriman',icon:'🚚'}];
   if(role==='ceo'||role==='sekretaris')return[{id:'laporan',label:'Laporan',icon:'📈'}];
@@ -491,11 +491,25 @@ function ApprovalPage({orders,onRefresh}){
           <div key={o.id} onClick={()=>openR(o,'approve')} style={{...S_card,border:'2px solid #c4b5fd',cursor:'pointer'}}><div style={{display:'flex',justifyContent:'space-between',alignItems:'center',flexWrap:'wrap',gap:'8px'}}><div><div style={{fontWeight:700,fontSize:'15px'}}>{d?.nama}</div><div style={{fontSize:'12px',color:'var(--muted)'}}>{o.items.length} item · {normDate(o.tanggal_kirim)} · {fRp(tj)}</div></div><span style={{fontSize:'13px',color:'var(--purple)',fontWeight:700}}>Review →</span></div></div>
         );})}</div>
       )}
-      {tab==='approved' && (!approved.length ? <div style={{...S_card,padding:'3rem',textAlign:'center',color:'var(--muted)'}}>Belum ada.</div> :
-        <div style={{display:'flex',flexDirection:'column',gap:'10px'}}>{approved.map(o=>{const d=DAPUR.find(x=>x.id===o.dapur_id);const tj=o.items.reduce((s,i)=>s+i.qty*i.harga_jual,0);const tb=o.items.reduce((s,i)=>s+i.qty*i.harga_beli,0);return(
-          <div key={o.id} style={S_card}><div style={{display:'flex',justifyContent:'space-between',alignItems:'center',flexWrap:'wrap',gap:'8px'}}><div><div style={{fontWeight:700}}>{d?.nama}</div><div style={{fontSize:'12px',color:'var(--muted)'}}>{normDate(o.tanggal_kirim)} · {o.items.length} item · Profit: <strong style={{color:'var(--green-dk)'}}>{fRp(tj-tb)}</strong></div></div><div style={{display:'flex',gap:'8px',alignItems:'center'}}><StatusBadge status="approved"/><button onClick={()=>openR(o,'edit')} style={{...btn('pri'),padding:'6px 12px',fontSize:'12px'}}>✏️ Edit</button></div></div></div>
-        );})}</div>
-      )}
+      {tab==='approved' && (!approved.length ? <div style={{...S_card,padding:'3rem',textAlign:'center',color:'var(--muted)'}}>Belum ada.</div> : (()=>{
+        const byDate={};
+        for(const o of approved){const d=normDate(o.tanggal_kirim);if(!byDate[d])byDate[d]={orders:[],jual:0,beli:0};byDate[d].orders.push(o);byDate[d].jual+=o.items.reduce((s,i)=>s+i.qty*i.harga_jual,0);byDate[d].beli+=o.items.reduce((s,i)=>s+i.qty*i.harga_beli,0);}
+        const sorted=Object.entries(byDate).sort((a,b)=>b[0].localeCompare(a[0]));
+        return(<div style={{display:'flex',flexDirection:'column',gap:'14px'}}>{sorted.map(([date,grp])=>{const pf=grp.jual-grp.beli;return(
+          <div key={date} style={S_card}>
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'12px',flexWrap:'wrap',gap:'8px',paddingBottom:'10px',borderBottom:'2px solid var(--border)'}}>
+              <div><div style={{fontWeight:700,fontSize:'15px',color:'var(--blue)'}}>📅 {date}</div><div style={{fontSize:'12px',color:'var(--muted)',marginTop:'2px'}}>{grp.orders.length} order approved</div></div>
+              <div style={{textAlign:'right'}}><div style={{fontSize:'11px',color:'var(--muted)',fontWeight:600}}>Total Profit</div><div style={{fontSize:'17px',fontWeight:700,color:pf>=0?'var(--green-dk)':'var(--red)'}}>{fRp(pf)}</div></div>
+            </div>
+            <div style={{display:'flex',flexDirection:'column',gap:'8px'}}>{grp.orders.map(o=>{const d=DAPUR.find(x=>x.id===o.dapur_id);const tj=o.items.reduce((s,i)=>s+i.qty*i.harga_jual,0);const tb=o.items.reduce((s,i)=>s+i.qty*i.harga_beli,0);return(
+              <div key={o.id} style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:'10px',padding:'12px',background:'var(--bg)',borderRadius:'10px',flexWrap:'wrap'}}>
+                <div style={{flex:1,minWidth:'150px'}}><div style={{fontWeight:700}}>{d?.nama}</div><div style={{fontSize:'12px',color:'var(--muted)',marginTop:'2px'}}>{o.items.length} item · Profit: <strong style={{color:'var(--green-dk)'}}>{fRp(tj-tb)}</strong></div></div>
+                <div style={{display:'flex',gap:'8px',alignItems:'center'}}><StatusBadge status="approved"/><button onClick={()=>openR(o,'edit')} style={{...btn('pri'),padding:'6px 12px',fontSize:'12px'}}>✏️ Edit</button></div>
+              </div>
+            );})}</div>
+          </div>
+        );})}</div>);
+      })())}
     </div>
   );
 }
@@ -654,6 +668,42 @@ function Laporan({orders,kerugian,onKerugianAdded,onKerugianDeleted,userRole}){
   );
 }
 
+// ===== PENGELUARAN (operator input) =====
+function Pengeluaran({kerugian,onKerugianAdded,onKerugianDeleted}){
+  const today=todayStr();const[selD,setSelD]=useState(today);const[showF,setShowF]=useState(false);const[sav,setSav]=useState(false);
+  const[form,setForm]=useState({tanggal:today,nama_bahan:'',biaya:'',keterangan:''});
+  const fk=kerugian.filter(k=>normDate(k.tanggal)===selD);
+  const totalHari=fk.reduce((s,k)=>s+k.biaya,0);
+  const add=async()=>{if(!form.nama_bahan||!form.biaya){alert('Isi nama & biaya');return;}setSav(true);const item={id:'krgn-'+Date.now(),tanggal:form.tanggal,nama_bahan:form.nama_bahan,qty:0,satuan:'',biaya:parseFloat(form.biaya)||0,keterangan:form.keterangan};try{const r=await api.post({action:'addKerugian',item});if(r.success){onKerugianAdded(item);setForm({tanggal:selD,nama_bahan:'',biaya:'',keterangan:''});setShowF(false);}else alert('Gagal');}catch(e){alert('Koneksi');}setSav(false);};
+  const del=async(id)=>{if(!confirm('Hapus pengeluaran ini?'))return;try{const r=await api.post({action:'deleteKerugian',kerugianId:id});if(r.success)onKerugianDeleted(id);else alert('Gagal');}catch(e){alert('Koneksi');}};
+  return(
+    <div style={{padding:'16px',maxWidth:'720px',margin:'0 auto'}} className="fade-in">
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'16px',flexWrap:'wrap',gap:'8px'}}><h2>Pengeluaran Harian</h2><button onClick={()=>{setForm(p=>({...p,tanggal:selD}));setShowF(x=>!x);}} style={btn('dan')}>{showF?'✕ Tutup':'+ Tambah'}</button></div>
+      <DateNav value={selD} onChange={setSelD}/>
+      {totalHari>0&&<div style={{...S_card,marginBottom:'14px',border:'2px solid #fca5a5',background:'var(--red-bg)'}}><div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}><div><div style={{fontSize:'12px',color:'var(--muted)',fontWeight:600}}>TOTAL PENGELUARAN</div><div style={{fontSize:'13px',color:'var(--muted)'}}>{fk.length} item · {selD}</div></div><div style={{fontSize:'22px',fontWeight:700,color:'var(--red)'}}>{fRp(totalHari)}</div></div></div>}
+      {showF&&<div style={{...S_card,marginBottom:'14px',border:'2px solid #fca5a5'}} className="fade-in">
+        <div style={{fontSize:'15px',fontWeight:700,marginBottom:'14px',color:'var(--red)'}}>Tambah Pengeluaran</div>
+        <div className="grid-1-mobile" style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'12px',marginBottom:'14px'}}>
+          <div><label style={{fontSize:'12px',color:'var(--muted)',display:'block',marginBottom:'6px',fontWeight:600}}>Tanggal *</label><input type="date" value={form.tanggal} onChange={e=>setForm(p=>({...p,tanggal:e.target.value}))} style={{width:'100%',boxSizing:'border-box'}}/></div>
+          <div><label style={{fontSize:'12px',color:'var(--muted)',display:'block',marginBottom:'6px',fontWeight:600}}>Nama / Jenis *</label><input value={form.nama_bahan} onChange={e=>setForm(p=>({...p,nama_bahan:e.target.value}))} placeholder="Bensin, Tol, Parkir, dll" style={{width:'100%',boxSizing:'border-box'}}/></div>
+          <div><label style={{fontSize:'12px',color:'var(--muted)',display:'block',marginBottom:'6px',fontWeight:600}}>Biaya (Rp) *</label><input type="number" value={form.biaya} onChange={e=>setForm(p=>({...p,biaya:e.target.value}))} placeholder="50000" style={{width:'100%',boxSizing:'border-box'}}/></div>
+          <div><label style={{fontSize:'12px',color:'var(--muted)',display:'block',marginBottom:'6px',fontWeight:600}}>Keterangan</label><input value={form.keterangan} onChange={e=>setForm(p=>({...p,keterangan:e.target.value}))} placeholder="Detail (opsional)" style={{width:'100%',boxSizing:'border-box'}}/></div>
+        </div>
+        <div style={{display:'flex',gap:'10px'}}><button onClick={()=>setShowF(false)} style={{...btn(),flex:1}}>Batal</button><button onClick={add} disabled={sav} style={{...btn('dan'),flex:2,opacity:sav?0.6:1}}>{sav?'...':'✓ Simpan'}</button></div>
+      </div>}
+      <div style={S_card}>
+        <div style={{fontSize:'14px',fontWeight:700,marginBottom:'12px'}}>Daftar Pengeluaran {selD}</div>
+        {!fk.length?<div style={{padding:'2rem',textAlign:'center',color:'var(--muted)'}}>Belum ada pengeluaran hari ini.</div>:
+        <div style={{display:'flex',flexDirection:'column',gap:'8px'}}>{fk.map(k=><div key={k.id} style={{display:'flex',alignItems:'center',gap:'10px',padding:'12px',background:'var(--bg)',borderRadius:'10px',flexWrap:'wrap'}}>
+          <div style={{flex:1,minWidth:'150px'}}><div style={{fontWeight:700}}>{k.nama_bahan}</div>{k.keterangan&&<div style={{fontSize:'12px',color:'var(--muted)',marginTop:'2px'}}>{k.keterangan}</div>}</div>
+          <div style={{fontWeight:700,color:'var(--red)',fontSize:'15px'}}>{fRp(k.biaya)}</div>
+          <button onClick={()=>del(k.id)} style={{...btn('dan'),padding:'6px 10px',fontSize:'11px'}}>×</button>
+        </div>)}</div>}
+      </div>
+    </div>
+  );
+}
+
 // ===== KELOLA AKUN =====
 function KelolaAkun({allUsers,onUsersChanged}){
   const roles=['operator','staf_beli','staf_kirim'];const users=(allUsers||[]).filter(u=>roles.includes(u.role));
@@ -717,6 +767,7 @@ function App(){
       case 'laporan':return <Laporan orders={orders} kerugian={kerugian} onKerugianAdded={k=>setKerugian(p=>[...p,k])} onKerugianDeleted={id=>setKerugian(p=>p.filter(k=>k.id!==id))} userRole={user.role}/>;
       case 'tugas_beli':return <TugasBeli user={user} tugasBeli={tugas} allUsers={allUsers} orders={orders} onStatusChanged={(id,s)=>setTugas(p=>p.map(t=>t.id===id?{...t,status:s}:t))} onHargaSaved={(id,h)=>setTugas(p=>p.map(t=>t.id===id?{...t,harga_beli:h,status:'done'}:t))}/>;
       case 'pengiriman':return <PengirimanView user={user} orders={orders} pengiriman={pngrm} onKonfirmasi={pid=>setPngrm(p=>p.map(x=>x.id===pid?{...x,status:'delivered'}:x))}/>;
+      case 'pengeluaran':return <Pengeluaran kerugian={kerugian} onKerugianAdded={k=>setKerugian(p=>[...p,k])} onKerugianDeleted={id=>setKerugian(p=>p.filter(k=>k.id!==id))}/>;
       case 'kelola_akun':return <KelolaAkun allUsers={allUsers} onUsersChanged={setAllUsers}/>;
       default:return <Dashboard orders={orders} loading={loading} error={error} onRefresh={loadAll} onCancelOrder={cancelOrder} onDeleteOrder={deleteOrder} onReorder={reorder} userRole={user.role}/>;
     }
