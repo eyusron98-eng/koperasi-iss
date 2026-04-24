@@ -280,7 +280,7 @@ function InputOrder({onOrderAdded,setView,editOrder,onClearEdit}){
 // ===== REKAP & TUGAS BELI =====
 function RekapBeli({orders,tugasBeli,stafBeli,allUsers,onTugasSaved,userRole,onRefresh}){
   const[sd,setSd]=useState(todayStr());const[asgn,setAsgn]=useState({});const[sav,setSav]=useState(false);const[tab,setTab]=useState('bagi');
-  const[editHJ,setEditHJ]=useState({});const[hjSav,setHjSav]=useState({});const[subSav,setSubSav]=useState({});const[search,setSearch]=useState('');
+  const[editHJ,setEditHJ]=useState({});const[hjSav,setHjSav]=useState({});const[subSav,setSubSav]=useState({});const[search,setSearch]=useState('');const[reviewOrder,setReviewOrder]=useState(null);const[reviewItems,setReviewItems]=useState([]);const[revSav,setRevSav]=useState(false);
 
   const ri=useMemo(()=>{
     const ro=orders.filter(o=>['draft','pending_kirim','delivered','rejected'].includes(o.status)&&normDate(o.tanggal_kirim)===sd);
@@ -386,18 +386,54 @@ function RekapBeli({orders,tugasBeli,stafBeli,allUsers,onTugasSaved,userRole,onR
         </div>)}
       </div>}
 
-      {tab==='submit' && <div>
-        <div style={{fontSize:'15px',fontWeight:700,marginBottom:'6px'}}>Ajukan ke Admin</div><div style={{fontSize:'12px',color:'var(--muted)',marginBottom:'16px'}}>Order lengkap bisa diajukan untuk approve.</div>
+      {tab==='submit' && (reviewOrder ? (
+        <div>
+          <button onClick={()=>setReviewOrder(null)} style={{...btn(),marginBottom:'12px'}}>← Batal Review</button>
+          <div style={{...S_card,border:'2px solid var(--yellow)',background:'var(--yellow-bg)',marginBottom:'12px'}}>
+            <div style={{fontSize:'14px',fontWeight:700,color:'var(--yellow)',marginBottom:'4px'}}>📋 Review sebelum ajukan</div>
+            <div style={{fontSize:'12px',color:'var(--text)'}}>Periksa qty dan harga, bisa diedit. Setelah benar, klik "Ajukan ke Admin".</div>
+          </div>
+          <div style={S_card}>
+            <div style={{fontWeight:700,fontSize:'15px',marginBottom:'12px'}}>{DAPUR.find(d=>d.id===reviewOrder.dapur_id)?.nama} — Kirim: {normDate(reviewOrder.tanggal_kirim)}</div>
+            <div style={{overflowX:'auto',margin:'0 -16px',padding:'0 16px'}}><table><thead><tr style={{borderBottom:'2px solid var(--border)'}}>{['Bahan','Qty','Sat','H.Jual','H.Beli','Subtotal',''].map((h,i)=><th key={i} style={{...S_th,textAlign:i>=3&&i<6?'right':'left'}}>{h}</th>)}</tr></thead>
+            <tbody>{reviewItems.map((it,idx)=><tr key={it.id}>
+              <td style={{...S_td,fontWeight:500}}>{it.nama||it.nama_bahan}</td>
+              <td style={S_td}><input type="number" step="0.1" value={it.qty} onChange={e=>setReviewItems(p=>p.map((x,i)=>i===idx?{...x,qty:parseFloat(e.target.value)||0}:x))} style={{width:'80px',textAlign:'right',padding:'6px',fontSize:'13px'}}/></td>
+              <td style={{...S_td,color:'var(--muted)',fontSize:'12px'}}>{it.satuan}</td>
+              <td style={{...S_td,textAlign:'right'}}><input type="number" value={it.harga_jual} onChange={e=>setReviewItems(p=>p.map((x,i)=>i===idx?{...x,harga_jual:parseFloat(e.target.value)||0}:x))} style={{width:'100px',textAlign:'right',padding:'6px',fontSize:'13px'}}/></td>
+              <td style={{...S_td,textAlign:'right'}}><input type="number" value={it.harga_beli} onChange={e=>setReviewItems(p=>p.map((x,i)=>i===idx?{...x,harga_beli:parseFloat(e.target.value)||0}:x))} style={{width:'100px',textAlign:'right',padding:'6px',fontSize:'13px'}}/></td>
+              <td style={{...S_td,textAlign:'right',fontWeight:700}}>{fRp(it.qty*it.harga_jual)}</td>
+              <td style={S_td}><button onClick={()=>{if(confirm('Hapus item?'))setReviewItems(p=>p.filter((_,i)=>i!==idx));}} style={{color:'var(--red)',background:'none',border:'none',cursor:'pointer',fontSize:'18px'}}>×</button></td>
+            </tr>)}</tbody>
+            <tfoot><tr style={{borderTop:'2px solid var(--border)'}}><td colSpan={5} style={{...S_td,textAlign:'right',fontWeight:700,borderBottom:'none'}}>Total Jual:</td><td style={{...S_td,textAlign:'right',fontWeight:700,fontSize:'15px',color:'var(--blue)',borderBottom:'none'}}>{fRp(reviewItems.reduce((s,i)=>s+i.qty*i.harga_jual,0))}</td><td></td></tr></tfoot></table></div>
+            <div style={{display:'flex',gap:'10px',marginTop:'16px',flexWrap:'wrap'}}>
+              <button onClick={async()=>{
+                setRevSav(true);
+                try{
+                  // Save edits first
+                  await api.post({action:'updateOrderItems',items:reviewItems.map(it=>({id:it.id,qty:it.qty,harga_jual:it.harga_jual,harga_beli:it.harga_beli}))});
+                  // Then submit
+                  const r=await api.post({action:'submitForApproval',orderId:reviewOrder.id});
+                  if(r.success){alert('Diajukan ke admin!');setReviewOrder(null);onRefresh();}else alert('Gagal');
+                }catch(e){alert('Koneksi');}
+                setRevSav(false);
+              }} disabled={revSav} style={{...btn('purple'),padding:'12px 24px'}}>{revSav?'Menyimpan...':'🚀 Ajukan ke Admin'}</button>
+              <button onClick={()=>setReviewOrder(null)} style={btn()}>Batal</button>
+            </div>
+          </div>
+        </div>
+      ) : (<div>
+        <div style={{fontSize:'15px',fontWeight:700,marginBottom:'6px'}}>Ajukan ke Admin</div><div style={{fontSize:'12px',color:'var(--muted)',marginBottom:'16px'}}>Klik "Review" untuk periksa & edit sebelum ajukan.</div>
         {!ordersForDate.length?<div style={{...S_met,padding:'2rem',textAlign:'center',color:'var(--muted)'}}>Tidak ada order untuk {sd}</div>:
         <div style={{display:'flex',flexDirection:'column',gap:'10px'}}>{ordersForDate.map(o=>{const d=DAPUR.find(x=>x.id===o.dapur_id);const tj2=o.items.reduce((s,i)=>s+i.qty*i.harga_jual,0);const tb2=o.items.reduce((s,i)=>s+i.qty*i.harga_beli,0);
           return(<div key={o.id} style={{...S_card,border:o.status==='rejected'?'2px solid var(--red)':'1px solid var(--border)'}}>
             <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',gap:'8px',flexWrap:'wrap'}}>
               <div><div style={{fontWeight:700}}>{d?.nama}</div><div style={{fontSize:'12px',color:'var(--muted)',marginTop:'4px'}}>{o.items.length} item · Jual: {fRp(tj2)} · Beli: {fRp(tb2)}</div>{o.status==='rejected'&&<div style={{fontSize:'12px',color:'var(--red)',marginTop:'6px',fontWeight:600}}>❌ Ditolak — edit lalu ajukan ulang</div>}</div>
-              <div style={{display:'flex',gap:'8px',alignItems:'center'}}><StatusBadge status={o.status}/><button onClick={()=>submitAppr(o.id)} disabled={subSav[o.id]} style={{...btn('purple'),padding:'8px 14px',fontSize:'12px'}}>{subSav[o.id]?'...':'Ajukan'}</button></div>
+              <div style={{display:'flex',gap:'8px',alignItems:'center',flexWrap:'wrap'}}><StatusBadge status={o.status}/><button onClick={()=>{setReviewOrder(o);setReviewItems(o.items.map(it=>({...it,nama:it.nama||it.nama_bahan})));}} style={{...btn('war'),padding:'8px 14px',fontSize:'12px'}}>📋 Review & Ajukan</button></div>
             </div>
           </div>);
         })}</div>}
-      </div>}
+      </div>))}
     </div>
   );
 }
@@ -405,33 +441,43 @@ function RekapBeli({orders,tugasBeli,stafBeli,allUsers,onTugasSaved,userRole,onR
 // ===== APPROVAL PAGE (Admin only) =====
 function ApprovalPage({orders,onRefresh}){
   const pending=orders.filter(o=>o.status==='pending_approval');const approved=orders.filter(o=>o.status==='approved');
-  const[sel,setSel]=useState(null);const[ei,setEi]=useState([]);const[sav,setSav]=useState(false);const[tab,setTab]=useState('pending');
-  const openR=(o)=>{setSel(o);setEi(o.items.map(it=>({...it})));};
+  const[sel,setSel]=useState(null);const[ei,setEi]=useState([]);const[sav,setSav]=useState(false);const[tab,setTab]=useState('pending');const[mode,setMode]=useState('approve');
+  const openR=(o,m)=>{setSel(o);setEi(o.items.map(it=>({...it,nama:it.nama||it.nama_bahan})));setMode(m||'approve');};
   const upI=(idx,f,v)=>setEi(p=>p.map((it,i)=>i===idx?{...it,[f]:parseFloat(v)||0}:it));
-  const approve=async()=>{setSav(true);try{const r=await api.post({action:'approveOrder',orderId:sel.id,items:ei.map(it=>({id:it.id,harga_jual:it.harga_jual,harga_beli:it.harga_beli}))});if(r.success){alert('Approved!');setSel(null);onRefresh();}else alert('Gagal');}catch(e){alert('Koneksi');}setSav(false);};
+  const rmItem=(idx)=>setEi(p=>p.filter((_,i)=>i!==idx));
+  const approve=async()=>{setSav(true);try{const r=await api.post({action:'approveOrder',orderId:sel.id,items:ei.map(it=>({id:it.id,qty:it.qty,harga_jual:it.harga_jual,harga_beli:it.harga_beli}))});if(r.success){alert('Approved!');setSel(null);onRefresh();}else alert('Gagal');}catch(e){alert('Koneksi');}setSav(false);};
+  const saveEdits=async()=>{setSav(true);try{const r=await api.post({action:'updateOrderItems',items:ei.map(it=>({id:it.id,qty:it.qty,harga_jual:it.harga_jual,harga_beli:it.harga_beli}))});if(r.success){alert('Tersimpan!');setSel(null);onRefresh();}else alert('Gagal');}catch(e){alert('Koneksi');}setSav(false);};
   const reject=async()=>{if(!confirm('Tolak order ini?'))return;setSav(true);try{const r=await api.post({action:'rejectOrder',orderId:sel.id});if(r.success){alert('Ditolak.');setSel(null);onRefresh();}else alert('Gagal');}catch(e){alert('Koneksi');}setSav(false);};
 
   if(sel){
     const d=DAPUR.find(x=>x.id===sel.dapur_id);const tj=ei.reduce((s,i)=>s+i.qty*i.harga_jual,0);const tb=ei.reduce((s,i)=>s+i.qty*i.harga_beli,0);
+    const isEditApproved=mode==='edit';
     return(
-      <div style={{padding:'16px',maxWidth:'900px',margin:'0 auto'}} className="fade-in">
+      <div style={{padding:'16px',maxWidth:'960px',margin:'0 auto'}} className="fade-in">
         <button onClick={()=>setSel(null)} style={{...btn(),marginBottom:'16px'}}>← Kembali</button>
-        <div style={{...S_card,border:'2px solid #c4b5fd'}}>
-          <div style={{display:'flex',justifyContent:'space-between',marginBottom:'16px',flexWrap:'wrap',gap:'8px'}}><div><div style={{fontSize:'18px',fontWeight:700}}>{d?.nama}</div><div style={{fontSize:'13px',color:'var(--muted)'}}>Kirim: {normDate(sel.tanggal_kirim)} · {ei.length} item</div></div><StatusBadge status={sel.status}/></div>
+        <div style={{...S_card,border:isEditApproved?'2px solid var(--green)':'2px solid #c4b5fd'}}>
+          <div style={{display:'flex',justifyContent:'space-between',marginBottom:'16px',flexWrap:'wrap',gap:'8px'}}><div><div style={{fontSize:'18px',fontWeight:700}}>{isEditApproved?'✏️ Edit Order Approved':'Review Approval'} — {d?.nama}</div><div style={{fontSize:'13px',color:'var(--muted)'}}>Kirim: {normDate(sel.tanggal_kirim)} · {ei.length} item</div></div><StatusBadge status={sel.status}/></div>
           <div className="grid-1-mobile" style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:'10px',marginBottom:'20px'}}>
             <div style={S_met}><div style={{fontSize:'11px',color:'var(--muted)',fontWeight:600}}>Jual</div><div style={{fontSize:'16px',fontWeight:700,color:'var(--blue)'}}>{fRp(tj)}</div></div>
             <div style={S_met}><div style={{fontSize:'11px',color:'var(--muted)',fontWeight:600}}>Beli</div><div style={{fontSize:'16px',fontWeight:700}}>{fRp(tb)}</div></div>
             <div style={{...S_met,background:tj-tb>=0?'var(--green-bg)':'var(--red-bg)'}}><div style={{fontSize:'11px',color:'var(--muted)',fontWeight:600}}>Profit</div><div style={{fontSize:'16px',fontWeight:700,color:tj-tb>=0?'var(--green-dk)':'var(--red)'}}>{fRp(tj-tb)}</div></div>
           </div>
-          <div style={{fontSize:'14px',fontWeight:700,marginBottom:'10px'}}>Detail Item — bisa edit</div>
-          <div style={{overflowX:'auto',margin:'0 -16px',padding:'0 16px'}}><table><thead><tr style={{borderBottom:'2px solid var(--border)'}}>{['Bahan','Qty','H.Jual','H.Beli','Profit'].map((h,i)=><th key={i} style={{...S_th,textAlign:i>=2?'right':'left'}}>{h}</th>)}</tr></thead>
+          <div style={{fontSize:'14px',fontWeight:700,marginBottom:'10px'}}>Detail Item — qty, harga jual & beli bisa diedit</div>
+          <div style={{overflowX:'auto',margin:'0 -16px',padding:'0 16px'}}><table><thead><tr style={{borderBottom:'2px solid var(--border)'}}>{['Bahan','Qty','Sat','H.Jual','H.Beli','Profit',''].map((h,i)=><th key={i} style={{...S_th,textAlign:i>=3&&i<6?'right':'left'}}>{h}</th>)}</tr></thead>
           <tbody>{ei.map((it,idx)=>{const pf=it.qty*(it.harga_jual-it.harga_beli);return(
-            <tr key={it.id}><td style={{...S_td,fontWeight:500}}>{it.nama||it.nama_bahan}</td><td style={{...S_td,color:'var(--muted)'}}>{it.qty} {it.satuan}</td>
+            <tr key={it.id}>
+              <td style={{...S_td,fontWeight:500}}>{it.nama}</td>
+              <td style={S_td}><input type="number" step="0.1" value={it.qty} onChange={e=>upI(idx,'qty',e.target.value)} style={{width:'80px',textAlign:'right',padding:'6px',fontSize:'13px'}}/></td>
+              <td style={{...S_td,color:'var(--muted)',fontSize:'12px'}}>{it.satuan}</td>
               <td style={{...S_td,textAlign:'right'}}><input type="number" value={it.harga_jual} onChange={e=>upI(idx,'harga_jual',e.target.value)} style={{width:'100px',textAlign:'right',padding:'6px',fontSize:'13px'}}/></td>
               <td style={{...S_td,textAlign:'right'}}><input type="number" value={it.harga_beli} onChange={e=>upI(idx,'harga_beli',e.target.value)} style={{width:'100px',textAlign:'right',padding:'6px',fontSize:'13px'}}/></td>
               <td style={{...S_td,textAlign:'right',fontWeight:700,color:pf>=0?'var(--green-dk)':'var(--red)'}}>{fRp(pf)}</td>
+              <td style={S_td}><button onClick={()=>{if(confirm('Hapus item "'+it.nama+'"?'))rmItem(idx);}} style={{color:'var(--red)',background:'none',border:'none',cursor:'pointer',fontSize:'18px'}}>×</button></td>
             </tr>);})}</tbody></table></div>
-          <div style={{display:'flex',gap:'10px',marginTop:'20px',justifyContent:'flex-end',flexWrap:'wrap'}}><button onClick={reject} disabled={sav} style={btn('dan')}>✕ Tolak</button><button onClick={approve} disabled={sav} style={{...btn('suc'),padding:'14px 28px',fontSize:'15px'}}>{sav?'Menyimpan...':'✓ Approve'}</button></div>
+          <div style={{display:'flex',gap:'10px',marginTop:'20px',justifyContent:'flex-end',flexWrap:'wrap'}}>
+            {isEditApproved?<button onClick={saveEdits} disabled={sav} style={{...btn('suc'),padding:'14px 28px',fontSize:'15px'}}>{sav?'Menyimpan...':'✓ Simpan Perubahan'}</button>
+              :<React.Fragment><button onClick={reject} disabled={sav} style={btn('dan')}>✕ Tolak</button><button onClick={approve} disabled={sav} style={{...btn('suc'),padding:'14px 28px',fontSize:'15px'}}>{sav?'Menyimpan...':'✓ Approve'}</button></React.Fragment>}
+          </div>
         </div>
       </div>
     );
@@ -442,12 +488,12 @@ function ApprovalPage({orders,onRefresh}){
       <TabBar tabs={[['pending','Pending ('+pending.length+')',pending.length],['approved','Approved ('+approved.length+')',0]]} active={tab} onChange={setTab}/>
       {tab==='pending' && (!pending.length ? <div style={{...S_card,padding:'3rem',textAlign:'center',color:'var(--muted)'}}>Tidak ada yang menunggu 🎉</div> :
         <div style={{display:'flex',flexDirection:'column',gap:'10px'}}>{pending.map(o=>{const d=DAPUR.find(x=>x.id===o.dapur_id);const tj=o.items.reduce((s,i)=>s+i.qty*i.harga_jual,0);return(
-          <div key={o.id} onClick={()=>openR(o)} style={{...S_card,border:'2px solid #c4b5fd',cursor:'pointer'}}><div style={{display:'flex',justifyContent:'space-between',alignItems:'center',flexWrap:'wrap',gap:'8px'}}><div><div style={{fontWeight:700,fontSize:'15px'}}>{d?.nama}</div><div style={{fontSize:'12px',color:'var(--muted)'}}>{o.items.length} item · {normDate(o.tanggal_kirim)} · {fRp(tj)}</div></div><span style={{fontSize:'13px',color:'var(--purple)',fontWeight:700}}>Review →</span></div></div>
+          <div key={o.id} onClick={()=>openR(o,'approve')} style={{...S_card,border:'2px solid #c4b5fd',cursor:'pointer'}}><div style={{display:'flex',justifyContent:'space-between',alignItems:'center',flexWrap:'wrap',gap:'8px'}}><div><div style={{fontWeight:700,fontSize:'15px'}}>{d?.nama}</div><div style={{fontSize:'12px',color:'var(--muted)'}}>{o.items.length} item · {normDate(o.tanggal_kirim)} · {fRp(tj)}</div></div><span style={{fontSize:'13px',color:'var(--purple)',fontWeight:700}}>Review →</span></div></div>
         );})}</div>
       )}
       {tab==='approved' && (!approved.length ? <div style={{...S_card,padding:'3rem',textAlign:'center',color:'var(--muted)'}}>Belum ada.</div> :
         <div style={{display:'flex',flexDirection:'column',gap:'10px'}}>{approved.map(o=>{const d=DAPUR.find(x=>x.id===o.dapur_id);const tj=o.items.reduce((s,i)=>s+i.qty*i.harga_jual,0);const tb=o.items.reduce((s,i)=>s+i.qty*i.harga_beli,0);return(
-          <div key={o.id} style={S_card}><div style={{display:'flex',justifyContent:'space-between',alignItems:'center',flexWrap:'wrap',gap:'8px'}}><div><div style={{fontWeight:700}}>{d?.nama}</div><div style={{fontSize:'12px',color:'var(--muted)'}}>{normDate(o.tanggal_kirim)} · Profit: <strong style={{color:'var(--green-dk)'}}>{fRp(tj-tb)}</strong></div></div><StatusBadge status="approved"/></div></div>
+          <div key={o.id} style={S_card}><div style={{display:'flex',justifyContent:'space-between',alignItems:'center',flexWrap:'wrap',gap:'8px'}}><div><div style={{fontWeight:700}}>{d?.nama}</div><div style={{fontSize:'12px',color:'var(--muted)'}}>{normDate(o.tanggal_kirim)} · {o.items.length} item · Profit: <strong style={{color:'var(--green-dk)'}}>{fRp(tj-tb)}</strong></div></div><div style={{display:'flex',gap:'8px',alignItems:'center'}}><StatusBadge status="approved"/><button onClick={()=>openR(o,'edit')} style={{...btn('pri'),padding:'6px 12px',fontSize:'12px'}}>✏️ Edit</button></div></div></div>
         );})}</div>
       )}
     </div>
