@@ -737,7 +737,7 @@ function KelolaAkun({allUsers,onUsersChanged}){
 // ===== MAIN APP =====
 function App(){
   const[user,setUser]=useState(()=>{try{const s=localStorage.getItem('koperasi_session');if(s){const{user:u,ts}=JSON.parse(s);if(Date.now()-ts<30*60*1000)return u;localStorage.removeItem('koperasi_session');}return null;}catch(e){return null;}});
-  const[view,setView]=useState('dashboard');const[orders,setOrders]=useState([]);const[tugas,setTugas]=useState([]);const[pngrm,setPngrm]=useState([]);const[allUsers,setAllUsers]=useState([]);const[kerugian,setKerugian]=useState([]);const[loading,setLoading]=useState(false);const[error,setError]=useState(null);const[sideOpen,setSideOpen]=useState(false);
+  const[view,setView]=useState(()=>{try{const s=localStorage.getItem('koperasi_session');if(s){const{user:u,ts}=JSON.parse(s);if(Date.now()-ts<30*60*1000)return navItems(u.role)[0]?.id||'dashboard';}}catch(e){}return'dashboard';});const[orders,setOrders]=useState([]);const[tugas,setTugas]=useState([]);const[pngrm,setPngrm]=useState([]);const[allUsers,setAllUsers]=useState([]);const[kerugian,setKerugian]=useState([]);const[loading,setLoading]=useState(false);const[error,setError]=useState(null);const[sideOpen,setSideOpen]=useState(false);
   useEffect(()=>{if(!user)return;const r=()=>{try{localStorage.setItem('koperasi_session',JSON.stringify({user,ts:Date.now()}))}catch(e){}};r();const ev=['click','keydown','scroll','touchstart'];ev.forEach(e=>window.addEventListener(e,r,{passive:true}));return()=>ev.forEach(e=>window.removeEventListener(e,r));},[user]);
   const stafBeli=allUsers.filter(x=>x.role==='staf_beli').map(x=>({id:x.username,nama:x.name}));
   const loadAll=useCallback(async()=>{setLoading(true);setError(null);try{const[o,t,p,u,k]=await Promise.all([api.get('getOrders'),api.get('getTugasBeli'),api.get('getPengiriman'),api.get('getUsers'),api.get('getKerugian')]);if(!Array.isArray(o))throw new Error(o.error||'gagal');setOrders(o);setTugas(Array.isArray(t)?t:[]);setPngrm(Array.isArray(p)?p:[]);setAllUsers(Array.isArray(u)?u:[]);setKerugian(Array.isArray(k)?k:[]);}catch(e){setError(e.message);}setLoading(false);},[]);
@@ -762,7 +762,7 @@ function App(){
       case 'pengiriman':return <PengirimanView user={user} orders={orders} pengiriman={pngrm} onKonfirmasi={pid=>setPngrm(p=>p.map(x=>x.id===pid?{...x,status:'delivered'}:x))}/>;
       case 'pengeluaran':return <Pengeluaran kerugian={kerugian} onKerugianAdded={k=>setKerugian(p=>[...p,k])} onKerugianDeleted={id=>setKerugian(p=>p.filter(k=>k.id!==id))}/>;
       case 'kelola_akun':return <KelolaAkun allUsers={allUsers} onUsersChanged={setAllUsers}/>;
-      default:return <Dashboard orders={orders} loading={loading} error={error} onRefresh={loadAll} onCancelOrder={cancelOrder} onDeleteOrder={deleteOrder} onReorder={reorder} userRole={user.role}/>;
+      default:return (user.role==='ceo'||user.role==='sekretaris') ? <Laporan orders={orders} kerugian={kerugian} onKerugianAdded={k=>setKerugian(p=>[...p,k])} onKerugianDeleted={id=>setKerugian(p=>p.filter(k=>k.id!==id))} userRole={user.role}/> : <Dashboard orders={orders} loading={loading} error={error} onRefresh={loadAll} onCancelOrder={cancelOrder} onDeleteOrder={deleteOrder} onReorder={reorder} userRole={user.role}/>;
     }
   };
   return(
