@@ -9,6 +9,8 @@
 <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
 <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
 <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.0/jspdf.plugin.autotable.min.js"></script>
 <style>
 :root{--bg:#f0f2f5;--card:#fff;--border:#e2e5ea;--text:#1a1d23;--muted:#6b7280;
 --green:#0d9f6e;--green-bg:#ecfdf5;--green-dk:#065f46;
@@ -616,12 +618,47 @@ function SuratJalan({orders,pengiriman}){
   const[sel,setSel]=useState(null);const[print,setPrint]=useState(false);const[selD,setSelD]=useState(todayStr());
   const filtered=orders.filter(o=>normDate(o.tanggal_kirim)===selD);
   const avail=useMemo(()=>{const ds=new Set();orders.forEach(o=>{const d=normDate(o.tanggal_kirim);if(d)ds.add(d);});return[...ds].sort().reverse();},[orders]);
-  if(print&&sel){const o=orders.find(x=>x.id===sel);const d=DAPUR.find(x=>x.id===o?.dapur_id);return(<div style={{padding:'16px',maxWidth:'800px',margin:'0 auto'}} className="fade-in"><div style={{display:'flex',gap:'8px',marginBottom:'16px',flexWrap:'wrap'}}><button onClick={()=>setPrint(false)} style={btn()}>← Kembali</button><button onClick={()=>window.print()} style={btn('pri')}>🖨️ Cetak</button></div><div style={{...S_card,padding:'28px',fontFamily:'Arial,sans-serif',fontSize:'13px',lineHeight:1.6}}><div style={{display:'flex',justifyContent:'space-between',borderBottom:'2px solid var(--text)',paddingBottom:'14px',marginBottom:'18px',flexWrap:'wrap',gap:'10px'}}><div style={{display:'flex',alignItems:'center',gap:'12px'}}><div style={{width:'50px',height:'50px',borderRadius:'50%',border:'2px solid #333',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'7px',fontWeight:'bold',textAlign:'center',lineHeight:1.3,flexShrink:0}}>KOPERASI<br/>INDONESIA</div><div><div style={{fontWeight:'bold',fontSize:'14px'}}>KOPERASI KONSUMEN INSAN SINERGI SEJAHTERA</div><div style={{fontSize:'11px',color:'#555'}}>Nomor AHU-0000368.AH.01.29 Tahun 2025</div><div style={{fontSize:'11px',color:'#555'}}>Kp. Tenjonagara, Mekarjaya, Pacet, Kab. Bandung</div></div></div></div><div style={{textAlign:'center',fontWeight:'bold',fontSize:'14px',letterSpacing:'2px',marginBottom:'20px'}}>SURAT JALAN PENGIRIMAN BAHAN</div><div style={{marginBottom:'16px'}}><div>Nama: <strong>{d?.pic}</strong> · {d?.hp}</div><div>Alamat: {d?.alamat}</div><div>Tanggal: {normDate(o?.tanggal_kirim)}</div><div>Pengirim: Kosim</div></div><table style={{width:'100%',borderCollapse:'collapse',fontSize:'12px',marginBottom:'16px'}}><thead><tr style={{background:'#f5f5f5'}}>{['No','Barang','Qty','Satuan','Ceklis','Ket'].map((h,i)=><th key={i} style={{border:'1px solid #ccc',padding:'8px',textAlign:'center'}}>{h}</th>)}</tr></thead><tbody>{o?.items?.map((it,i)=><tr key={i}><td style={{border:'1px solid #ccc',padding:'8px',textAlign:'center'}}>{i+1}</td><td style={{border:'1px solid #ccc',padding:'8px'}}>{it.nama||it.nama_bahan}</td><td style={{border:'1px solid #ccc',padding:'8px',textAlign:'right'}}>{it.qty}</td><td style={{border:'1px solid #ccc',padding:'8px',textAlign:'center'}}>{it.satuan}</td><td style={{border:'1px solid #ccc',padding:'8px',width:'80px'}}></td><td style={{border:'1px solid #ccc',padding:'8px',width:'80px'}}></td></tr>)}</tbody></table><div style={{fontSize:'12px'}}>Hubungi admin: WA 085351075661</div></div></div>);}
+  const downloadPDF=(o,d)=>{
+    if(!window.jspdf){alert('PDF library belum siap, refresh halaman dulu');return;}
+    const{jsPDF}=window.jspdf;const doc=new jsPDF();
+    // Header
+    doc.setFontSize(11);doc.setFont('helvetica','bold');
+    doc.text('KOPERASI KONSUMEN INSAN SINERGI SEJAHTERA',105,15,{align:'center'});
+    doc.setFont('helvetica','normal');doc.setFontSize(8);
+    doc.text('Nomor AHU-0000368.AH.01.29 Tahun 2025',105,20,{align:'center'});
+    doc.text('Kp. Tenjonagara 02/02, Mekarjaya, Pacet, Kab. Bandung',105,24,{align:'center'});
+    doc.setLineWidth(0.5);doc.line(15,28,195,28);
+    // Title
+    doc.setFontSize(13);doc.setFont('helvetica','bold');
+    doc.text('SURAT JALAN PENGIRIMAN BAHAN',105,38,{align:'center'});
+    // Info
+    doc.setFontSize(10);doc.setFont('helvetica','normal');
+    doc.text('Nama       : '+(d?.pic||''),15,50);
+    doc.text('HP         : '+(d?.hp||''),15,55);
+    doc.text('Alamat     : '+(d?.alamat||''),15,60);
+    doc.text('Tanggal    : '+normDate(o?.tanggal_kirim),15,65);
+    doc.text('Pengirim   : Kosim',15,70);
+    // Table
+    const rows=o?.items?.map((it,i)=>[i+1,it.nama||it.nama_bahan,it.qty,it.satuan,'',''])||[];
+    doc.autoTable({startY:76,head:[['No','Barang','Qty','Satuan','Ceklis','Ket']],body:rows,
+      theme:'grid',headStyles:{fillColor:[230,230,230],textColor:[0,0,0],fontStyle:'bold',halign:'center'},
+      styles:{fontSize:9,cellPadding:2.5},
+      columnStyles:{0:{halign:'center',cellWidth:12},2:{halign:'right',cellWidth:18},3:{halign:'center',cellWidth:20},4:{cellWidth:25},5:{cellWidth:25}}});
+    const fy=doc.lastAutoTable.finalY+10;
+    doc.setFontSize(9);
+    doc.text('Hubungi admin: WA 085351075661',15,fy);
+    // Signatures
+    const sy=fy+15;
+    doc.text('Pengirim,',40,sy,{align:'center'});doc.text('Penerima,',160,sy,{align:'center'});
+    doc.text('(........................)',40,sy+25,{align:'center'});doc.text('(........................)',160,sy+25,{align:'center'});
+    doc.save('Surat-Jalan-'+(d?.nama||'order')+'-'+normDate(o?.tanggal_kirim)+'.pdf');
+  };
+  if(print&&sel){const o=orders.find(x=>x.id===sel);const d=DAPUR.find(x=>x.id===o?.dapur_id);return(<div style={{padding:'16px',maxWidth:'800px',margin:'0 auto'}} className="fade-in"><div style={{display:'flex',gap:'8px',marginBottom:'16px',flexWrap:'wrap'}}><button onClick={()=>setPrint(false)} style={btn()}>← Kembali</button><button onClick={()=>window.print()} style={btn()}>🖨️ Cetak</button><button onClick={()=>downloadPDF(o,d)} style={btn('pri')}>📄 Download PDF</button></div><div style={{...S_card,padding:'28px',fontFamily:'Arial,sans-serif',fontSize:'13px',lineHeight:1.6}}><div style={{display:'flex',justifyContent:'space-between',borderBottom:'2px solid var(--text)',paddingBottom:'14px',marginBottom:'18px',flexWrap:'wrap',gap:'10px'}}><div style={{display:'flex',alignItems:'center',gap:'12px'}}><div style={{width:'50px',height:'50px',borderRadius:'50%',border:'2px solid #333',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'7px',fontWeight:'bold',textAlign:'center',lineHeight:1.3,flexShrink:0}}>KOPERASI<br/>INDONESIA</div><div><div style={{fontWeight:'bold',fontSize:'14px'}}>KOPERASI KONSUMEN INSAN SINERGI SEJAHTERA</div><div style={{fontSize:'11px',color:'#555'}}>Nomor AHU-0000368.AH.01.29 Tahun 2025</div><div style={{fontSize:'11px',color:'#555'}}>Kp. Tenjonagara, Mekarjaya, Pacet, Kab. Bandung</div></div></div></div><div style={{textAlign:'center',fontWeight:'bold',fontSize:'14px',letterSpacing:'2px',marginBottom:'20px'}}>SURAT JALAN PENGIRIMAN BAHAN</div><div style={{marginBottom:'16px'}}><div>Nama: <strong>{d?.pic}</strong> · {d?.hp}</div><div>Alamat: {d?.alamat}</div><div>Tanggal: {normDate(o?.tanggal_kirim)}</div><div>Pengirim: Kosim</div></div><table style={{width:'100%',borderCollapse:'collapse',fontSize:'12px',marginBottom:'16px'}}><thead><tr style={{background:'#f5f5f5'}}>{['No','Barang','Qty','Satuan','Ceklis','Ket'].map((h,i)=><th key={i} style={{border:'1px solid #ccc',padding:'8px',textAlign:'center'}}>{h}</th>)}</tr></thead><tbody>{o?.items?.map((it,i)=><tr key={i}><td style={{border:'1px solid #ccc',padding:'8px',textAlign:'center'}}>{i+1}</td><td style={{border:'1px solid #ccc',padding:'8px'}}>{it.nama||it.nama_bahan}</td><td style={{border:'1px solid #ccc',padding:'8px',textAlign:'right'}}>{it.qty}</td><td style={{border:'1px solid #ccc',padding:'8px',textAlign:'center'}}>{it.satuan}</td><td style={{border:'1px solid #ccc',padding:'8px',width:'80px'}}></td><td style={{border:'1px solid #ccc',padding:'8px',width:'80px'}}></td></tr>)}</tbody></table><div style={{fontSize:'12px'}}>Hubungi admin: WA 085351075661</div></div></div>);}
   return(
     <div style={{padding:'16px',maxWidth:'680px',margin:'0 auto'}} className="fade-in"><h2 style={{marginBottom:'12px'}}>Surat Jalan</h2>
       <DateNav value={selD} onChange={setSelD} label="Kirim:"/>
       {avail.length>0&&<div style={{display:'flex',gap:'6px',flexWrap:'wrap',marginBottom:'14px'}}>{avail.slice(0,7).map(d=><button key={d} onClick={()=>setSelD(d)} style={{padding:'6px 12px',fontSize:'12px',borderRadius:'20px',border:d===selD?'2px solid var(--blue)':'1.5px solid var(--border)',background:d===selD?'var(--blue-bg)':'#fff',color:d===selD?'var(--blue)':'var(--muted)',cursor:'pointer',fontWeight:600}}>{d===todayStr()?'Hari ini':d.slice(5)}</button>)}</div>}
-      <div style={{display:'flex',flexDirection:'column',gap:'10px'}}>{filtered.map(o=>{const d=DAPUR.find(x=>x.id===o.dapur_id);return(<div key={o.id} style={{...S_card,display:'flex',alignItems:'center',gap:'12px',flexWrap:'wrap'}}><div style={{flex:1,minWidth:'140px'}}><div style={{fontWeight:700}}>{d?.nama}</div><div style={{fontSize:'12px',color:'var(--muted)'}}>{o.items.length} item</div></div><div style={{display:'flex',gap:'8px',alignItems:'center'}}><StatusBadge status={o.status}/><button onClick={()=>{setSel(o.id);setPrint(true);}} style={{...btn('pri'),padding:'8px 16px'}}>Lihat Surat</button></div></div>);})}
+      <div style={{display:'flex',flexDirection:'column',gap:'10px'}}>{filtered.map(o=>{const d=DAPUR.find(x=>x.id===o.dapur_id);return(<div key={o.id} style={{...S_card,display:'flex',alignItems:'center',gap:'12px',flexWrap:'wrap'}}><div style={{flex:1,minWidth:'140px'}}><div style={{fontWeight:700}}>{d?.nama}</div><div style={{fontSize:'12px',color:'var(--muted)'}}>{o.items.length} item</div></div><div style={{display:'flex',gap:'6px',alignItems:'center',flexWrap:'wrap'}}><StatusBadge status={o.status}/><button onClick={()=>downloadPDF(o,d)} style={{...btn('suc'),padding:'8px 12px',fontSize:'12px'}}>📄 PDF</button><button onClick={()=>{setSel(o.id);setPrint(true);}} style={{...btn('pri'),padding:'8px 12px',fontSize:'12px'}}>Lihat</button></div></div>);})}
       {!filtered.length&&<div style={{...S_card,padding:'3rem',textAlign:'center',color:'var(--muted)'}}>Tidak ada order untuk {selD}</div>}</div>
     </div>
   );
