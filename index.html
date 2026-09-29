@@ -82,11 +82,12 @@ function navItems(role){
 }
 const _parseRes=async(res)=>{const t=(await res.text()).trim();if(t.charAt(0)==='<')throw new Error('HTML_RESPONSE');try{return JSON.parse(t);}catch(e){throw new Error('BAD_JSON');}};
 const _sleep=(ms)=>new Promise(r=>setTimeout(r,ms));
+const _fetchT=async(url,opt={},ms=20000)=>{const c=new AbortController();const id=setTimeout(()=>c.abort(),ms);try{return await fetch(url,{...opt,signal:c.signal});}finally{clearTimeout(id);}};
 const api={
-  get:async(a,p={})=>{let last;for(let i=0;i<3;i++){try{return await _parseRes(await fetch(API+'?'+new URLSearchParams({action:a,...p})));}catch(e){last=e;await _sleep(700*(i+1));}}throw last;},
-  post:async(b)=>_parseRes(await fetch(API,{method:'POST',body:JSON.stringify(b)}))
+  get:async(a,p={})=>{let last;for(let i=0;i<3;i++){try{return await _parseRes(await _fetchT(API+'?'+new URLSearchParams({action:a,...p})));}catch(e){last=e;await _sleep(700*(i+1));}}throw last;},
+  post:async(b)=>_parseRes(await _fetchT(API,{method:'POST',body:JSON.stringify(b)},30000))
 };
-const errMsg=(e)=>(e&&(e.message==='HTML_RESPONSE'||e.message==='BAD_JSON'))?'Server Google sedang sibuk. Tekan Refresh untuk mencoba lagi.':(e&&e.message)||'Gagal memuat data';
+const errMsg=(e)=>{if(!e)return'Gagal memuat data';if(e.name==='AbortError')return'Koneksi lambat, permintaan dihentikan. Tekan Refresh.';if(e.message==='HTML_RESPONSE'||e.message==='BAD_JSON')return'Server Google sedang sibuk. Tekan Refresh untuk mencoba lagi.';return e.message||'Gagal memuat data';};
 
 // ===== STYLES =====
 const S_card={background:'var(--card)',border:'1px solid var(--border)',borderRadius:'var(--radius)',padding:'16px',boxShadow:'var(--shadow)'};
@@ -228,7 +229,7 @@ function Dashboard({orders,loading,error,onRefresh,onCancelOrder,onDeleteOrder,o
   const pending=orders.filter(o=>o.status==='pending_approval').length;
   const co=orders.find(o=>o.id===cid);const cd=DAPUR.find(d=>d.id===co?.dapur_id);
   const dOrder=orders.find(o=>o.id===did);const dDapur=DAPUR.find(d=>d.id===dOrder?.dapur_id);
-  const handleDelete=async()=>{setDeleting(true);try{const r=await api.post({action:'deleteOrder',orderId:did});if(r.success){onDeleteOrder(did);setDid(null);alert('Order dihapus.');}else alert('Gagal');}catch(e){alert('Koneksi');}setDeleting(false);};
+  const handleDelete=async()=>{setDeleting(true);try{const r=await api.post({action:'deleteOrder',orderId:did});if(r.success){onDeleteOrder(did);setDid(null);alert('Order dihapus.');}else alert('Gagal');}catch(e){alert(errMsg(e));}setDeleting(false);};
   return(
     <div style={{padding:'16px',maxWidth:'960px',margin:'0 auto'}} className="fade-in">
       {cid && <div style={{position:'fixed',top:0,left:0,right:0,bottom:0,background:'rgba(0,0,0,0.5)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:1000,padding:'16px'}} onClick={()=>setCid(null)}><div style={{...S_card,maxWidth:'360px',width:'100%',padding:'24px'}} onClick={e=>e.stopPropagation()}><div style={{fontSize:'16px',fontWeight:700,textAlign:'center',marginBottom:'16px'}}>Batalkan Order?</div><div style={{fontSize:'14px',color:'var(--muted)',textAlign:'center',marginBottom:'20px'}}>Order {cd?.nama} tgl {co?.tanggal_kirim}</div><div style={{display:'flex',gap:'10px'}}><button onClick={()=>setCid(null)} style={{...btn(),flex:1}}>Tidak</button><button onClick={()=>{onCancelOrder(cid);setCid(null);}} style={{...btn('dan'),flex:1}}>Ya, Batalkan</button></div></div></div>}
@@ -275,7 +276,7 @@ function InputOrder({onOrderAdded,setView,editOrder,onClearEdit}){
   const submit=async()=>{setSav(true);
     // If editing, delete old order first
     if(isEdit){try{await api.post({action:'deleteOrder',orderId:editOrder.id});}catch(e){}}
-    const order={id:'ord-'+Date.now(),dapur_id:selD,tanggal_order:tO,tanggal_kirim:tK,status:'draft',items};try{const r=await api.post({action:'addOrder',order});if(r.success){onOrderAdded(order);alert(isEdit?'Order berhasil diperbarui!':'Order berhasil!');setView('dashboard');}else alert('Gagal');}catch(e){alert('Koneksi');}setSav(false);};
+    const order={id:'ord-'+Date.now(),dapur_id:selD,tanggal_order:tO,tanggal_kirim:tK,status:'draft',items};try{const r=await api.post({action:'addOrder',order});if(r.success){onOrderAdded(order);alert(isEdit?'Order berhasil diperbarui!':'Order berhasil!');setView('dashboard');}else alert('Gagal');}catch(e){alert(errMsg(e));}setSav(false);};
   const tot=items.reduce((s,i)=>s+i.qty*i.harga_jual,0);
   return(
     <div style={{padding:'16px',maxWidth:'820px',margin:'0 auto'}} className="fade-in">
@@ -337,9 +338,9 @@ function RekapBeli({orders,tugasBeli,stafBeli,allUsers,onTugasSaved,userRole,onR
   const addA=(nm,tot2)=>setAsgn(p=>{const c=p[nm]||[];const used=c.reduce((s,a)=>s+(parseFloat(a.qty)||0),0);return{...p,[nm]:[...c,{staf:'',qty:Math.max(0,tot2-used)}]};});
   const rmA=(nm,i)=>setAsgn(p=>({...p,[nm]:(p[nm]||[]).filter((_,j)=>j!==i)}));
   const upA=(nm,i,f,v)=>setAsgn(p=>({...p,[nm]:(p[nm]||[]).map((a,j)=>j===i?{...a,[f]:v}:a)}));
-  const saveTugas=async()=>{const tugas=[];for(const it of ri)for(const a of getA(it.nama)){if(!a.staf)continue;tugas.push({id:a.tugasId||('tgs-'+Date.now()+'-'+Math.random().toString(36).slice(2,7)),tanggal:sd,staf_id:a.staf,nama_bahan:it.nama,qty:parseFloat(a.qty)||0,satuan:it.satuan});}if(!tugas.length){alert('Pilih staf');return;}setSav(true);try{const r=await api.post({action:'saveTugasBeli',tugas,tanggal:sd});if(r.success){onTugasSaved(tugas,sd);alert('Tersimpan!');}else alert('Gagal');}catch(e){alert('Koneksi');}setSav(false);};
-  const saveHJ=async(itemId,v)=>{setHjSav(p=>({...p,[itemId]:true}));try{await api.post({action:'updateHargaJual',itemId,hargaJual:parseFloat(v)||0});onRefresh();}catch(e){alert('Gagal');}setHjSav(p=>({...p,[itemId]:false}));};
-  const submitAppr=async(oid)=>{setSubSav(p=>({...p,[oid]:true}));try{const r=await api.post({action:'submitForApproval',orderId:oid});if(r.success){alert('Diajukan!');onRefresh();}else alert('Gagal');}catch(e){alert('Koneksi');}setSubSav(p=>({...p,[oid]:false}));};
+  const saveTugas=async()=>{const tugas=[];for(const it of ri)for(const a of getA(it.nama)){if(!a.staf)continue;tugas.push({id:a.tugasId||('tgs-'+Date.now()+'-'+Math.random().toString(36).slice(2,7)),tanggal:sd,staf_id:a.staf,nama_bahan:it.nama,qty:parseFloat(a.qty)||0,satuan:it.satuan});}if(!tugas.length){alert('Pilih staf');return;}setSav(true);try{const r=await api.post({action:'saveTugasBeli',tugas,tanggal:sd});if(r.success){onTugasSaved(tugas,sd);alert('Tersimpan!');}else alert('Gagal');}catch(e){alert(errMsg(e));}setSav(false);};
+  const saveHJ=async(itemId,v)=>{setHjSav(p=>({...p,[itemId]:true}));try{await api.post({action:'updateHargaJual',itemId,hargaJual:parseFloat(v)||0});onRefresh();}catch(e){alert(errMsg(e));}setHjSav(p=>({...p,[itemId]:false}));};
+  const submitAppr=async(oid)=>{setSubSav(p=>({...p,[oid]:true}));try{const r=await api.post({action:'submitForApproval',orderId:oid});if(r.success){onRefresh();}else alert('Gagal');}catch(e){alert(errMsg(e));}setSubSav(p=>({...p,[oid]:false}));};
   const tsI=(s)=>s==='done'?<span style={bdg('suc')}>Harga ✓</span>:s==='bought'?<span style={bdg('war')}>Dibeli</span>:<span style={{...bdg(),background:'var(--bg)',color:'var(--muted)'}}>Belum</span>;
   const copyWA=()=>{
     const lines=['*Tugas Beli Bahan — '+sd+'*',''];const byStaf={};
@@ -443,8 +444,8 @@ function RekapBeli({orders,tugasBeli,stafBeli,allUsers,onTugasSaved,userRole,onR
                   await api.post({action:'updateOrderItems',items:reviewItems.map(it=>({id:it.id,qty:it.qty,harga_jual:it.harga_jual,harga_beli:it.harga_beli}))});
                   // Then submit
                   const r=await api.post({action:'submitForApproval',orderId:reviewOrder.id});
-                  if(r.success){alert('Diajukan ke admin!');setReviewOrder(null);onRefresh();}else alert('Gagal');
-                }catch(e){alert('Koneksi');}
+                  if(r.success){setReviewOrder(null);onRefresh();}else alert('Gagal');
+                }catch(e){alert(errMsg(e));}
                 setRevSav(false);
               }} disabled={revSav} style={{...btn('purple'),padding:'12px 24px'}}>{revSav?'Menyimpan...':'🚀 Ajukan ke Admin'}</button>
               <button onClick={()=>setReviewOrder(null)} style={btn()}>Batal</button>
@@ -474,9 +475,9 @@ function ApprovalPage({orders,onRefresh}){
   const openR=(o,m)=>{setSel(o);setEi(o.items.map(it=>({...it,nama:it.nama||it.nama_bahan})));setMode(m||'approve');};
   const upI=(idx,f,v)=>setEi(p=>p.map((it,i)=>i===idx?{...it,[f]:parseFloat(v)||0}:it));
   const rmItem=(idx)=>setEi(p=>p.filter((_,i)=>i!==idx));
-  const approve=async()=>{setSav(true);try{const r=await api.post({action:'approveOrder',orderId:sel.id,items:ei.map(it=>({id:it.id,qty:it.qty,harga_jual:it.harga_jual,harga_beli:it.harga_beli}))});if(r.success){alert('Approved!');setSel(null);onRefresh();}else alert('Gagal');}catch(e){alert('Koneksi');}setSav(false);};
-  const saveEdits=async()=>{setSav(true);try{const r=await api.post({action:'updateOrderItems',items:ei.map(it=>({id:it.id,qty:it.qty,harga_jual:it.harga_jual,harga_beli:it.harga_beli}))});if(r.success){alert('Tersimpan!');setSel(null);onRefresh();}else alert('Gagal');}catch(e){alert('Koneksi');}setSav(false);};
-  const reject=async()=>{if(!confirm('Tolak order ini?'))return;setSav(true);try{const r=await api.post({action:'rejectOrder',orderId:sel.id});if(r.success){alert('Ditolak.');setSel(null);onRefresh();}else alert('Gagal');}catch(e){alert('Koneksi');}setSav(false);};
+  const approve=async()=>{setSav(true);try{const r=await api.post({action:'approveOrder',orderId:sel.id,items:ei.map(it=>({id:it.id,qty:it.qty,harga_jual:it.harga_jual,harga_beli:it.harga_beli}))});if(r.success){setSel(null);onRefresh();}else alert('Gagal');}catch(e){alert(errMsg(e));}setSav(false);};
+  const saveEdits=async()=>{setSav(true);try{const r=await api.post({action:'updateOrderItems',items:ei.map(it=>({id:it.id,qty:it.qty,harga_jual:it.harga_jual,harga_beli:it.harga_beli}))});if(r.success){setSel(null);onRefresh();}else alert('Gagal');}catch(e){alert(errMsg(e));}setSav(false);};
+  const reject=async()=>{if(!confirm('Tolak order ini?'))return;setSav(true);try{const r=await api.post({action:'rejectOrder',orderId:sel.id});if(r.success){alert('Ditolak.');setSel(null);onRefresh();}else alert('Gagal');}catch(e){alert(errMsg(e));}setSav(false);};
 
   if(sel){
     const d=DAPUR.find(x=>x.id===sel.dapur_id);const tj=ei.reduce((s,i)=>s+i.qty*i.harga_jual,0);const tb=ei.reduce((s,i)=>s+i.qty*i.harga_beli,0);
@@ -565,8 +566,8 @@ function TugasBeli({user,tugasBeli,allUsers,orders,onStatusChanged,onHargaSaved}
   const avail=useMemo(()=>{const ds=new Set();tugasBeli.forEach(t=>{const d=normDate(t.tanggal);if(d)ds.add(d);});return[...ds].sort().reverse();},[tugasBeli]);
   const getNm=(sid)=>{const u2=(allUsers||[]).find(x=>x.username===sid||x.id===sid);return u2?u2.name:sid;};
   const hjMap=useMemo(()=>{const m={};for(const o of orders)for(const it of o.items){const nm=it.nama||it.nama_bahan;if(!m[nm])m[nm]=[];m[nm].push(it.harga_jual);}const r={};for(const[nm,ps]of Object.entries(m))r[nm]={max:Math.max(...ps)};return r;},[orders]);
-  const beli=async(t)=>{setKon(p=>({...p,[t.id]:true}));try{const r=await api.post({action:'updateTugasStatus',tugasId:t.id,status:'bought'});if(r.success)onStatusChanged(t.id,'bought');}catch(e){alert('Gagal');}setKon(p=>({...p,[t.id]:false}));};
-  const simpanH=async(id)=>{const h=parseFloat(hi[id])||0;if(h<=0){alert('Harga tidak valid');return;}setSav(p=>({...p,[id]:true}));try{const r=await api.post({action:'updateHargaBeli',tugasId:id,hargaBeli:h});if(r.success)onHargaSaved(id,h);}catch(e){alert('Gagal');}setSav(p=>({...p,[id]:false}));};
+  const beli=async(t)=>{setKon(p=>({...p,[t.id]:true}));try{const r=await api.post({action:'updateTugasStatus',tugasId:t.id,status:'bought'});if(r.success)onStatusChanged(t.id,'bought');}catch(e){alert(errMsg(e));}setKon(p=>({...p,[t.id]:false}));};
+  const simpanH=async(id)=>{const h=parseFloat(hi[id])||0;if(h<=0){alert('Harga tidak valid');return;}setSav(p=>({...p,[id]:true}));try{const r=await api.post({action:'updateHargaBeli',tugasId:id,hargaBeli:h});if(r.success)onHargaSaved(id,h);}catch(e){alert(errMsg(e));}setSav(p=>({...p,[id]:false}));};
   const sI=(s)=>s==='done'?<span style={bdg('suc')}>Selesai ✓</span>:s==='bought'?<span style={bdg('war')}>Dibeli</span>:<span style={bdg()}>Belum</span>;
   return(
     <div style={{padding:'16px',maxWidth:'720px',margin:'0 auto'}} className="fade-in">
@@ -667,7 +668,7 @@ function PengirimanView({user,orders,pengiriman,onKonfirmasi}){
   const filtered=pengiriman.filter(p=>normDate(p.tanggal)===selD);
   const avail=useMemo(()=>{const ds=new Set();pengiriman.forEach(p=>{const d=normDate(p.tanggal);if(d)ds.add(d);});return[...ds].sort().reverse();},[pengiriman]);
   const toB64=(f)=>new Promise((r,j)=>{const rd=new FileReader();rd.onload=()=>r(rd.result);rd.onerror=j;rd.readAsDataURL(f);});
-  const konfirm=async(pid)=>{if(!fc||!fp){alert('Upload kedua foto');return;}setSav(true);try{const f1=await toB64(fc);const f2=await toB64(fp);await api.post({action:'updatePengiriman',pengirimanId:pid,status:'delivered',catatan:notes,foto_ceklis:f1.slice(0,100)+'...[foto]',foto_penerima:f2.slice(0,100)+'...[foto]'});onKonfirmasi(pid);setSel(null);setFc(null);setFp(null);setNotes('');alert('Dikonfirmasi!');}catch(e){alert('Koneksi');}setSav(false);};
+  const konfirm=async(pid)=>{if(!fc||!fp){alert('Upload kedua foto');return;}setSav(true);try{const f1=await toB64(fc);const f2=await toB64(fp);await api.post({action:'updatePengiriman',pengirimanId:pid,status:'delivered',catatan:notes,foto_ceklis:f1.slice(0,100)+'...[foto]',foto_penerima:f2.slice(0,100)+'...[foto]'});onKonfirmasi(pid);setSel(null);setFc(null);setFp(null);setNotes('');alert('Dikonfirmasi!');}catch(e){alert(errMsg(e));}setSav(false);};
   if(viewSJ){const o=orders.find(x=>x.id===viewSJ.order_id);const d=DAPUR.find(x=>x.id===viewSJ.dapur_id);return(<div style={{padding:'16px',maxWidth:'800px',margin:'0 auto'}} className="fade-in"><div style={{display:'flex',gap:'8px',marginBottom:'16px',flexWrap:'wrap'}}><button onClick={()=>setViewSJ(null)} style={btn()}>← Kembali</button><button onClick={()=>generateSuratJalanPDF(o,d)} style={btn('pri')}>📄 Download PDF</button></div><div style={{...S_card,padding:'24px'}}><div style={{textAlign:'center',fontWeight:700,fontSize:'16px',marginBottom:'20px'}}>SURAT JALAN</div><div style={{fontSize:'13px',marginBottom:'16px'}}><div><strong>Kepada:</strong> {d?.pic} · {d?.hp}</div><div>{d?.alamat}</div><div>Tanggal: {normDate(viewSJ.tanggal)}</div></div><table style={{width:'100%',borderCollapse:'collapse',fontSize:'13px'}}><thead><tr style={{background:'var(--bg)'}}>{['No','Barang','Qty','Satuan'].map((h,i)=><th key={i} style={{border:'1px solid var(--border)',padding:'8px',textAlign:i>=2?'right':'left'}}>{h}</th>)}</tr></thead><tbody>{o?.items?.map((it,i)=><tr key={i}><td style={{border:'1px solid var(--border)',padding:'8px',textAlign:'center'}}>{i+1}</td><td style={{border:'1px solid var(--border)',padding:'8px'}}>{it.nama||it.nama_bahan}</td><td style={{border:'1px solid var(--border)',padding:'8px',textAlign:'right'}}>{it.qty}</td><td style={{border:'1px solid var(--border)',padding:'8px',textAlign:'center'}}>{it.satuan}</td></tr>)}</tbody></table></div></div>);}
   return(
     <div style={{padding:'16px',maxWidth:'680px',margin:'0 auto'}} className="fade-in">
@@ -727,7 +728,7 @@ function Laporan({orders,kerugian,onKerugianAdded,onKerugianDeleted,userRole}){
   const im={};for(const o of fo)for(const it of o.items){const nm=it.nama||it.nama_bahan;if(!im[nm])im[nm]={nama:nm,qty:0,j:0,b:0};im[nm].qty+=it.qty;im[nm].j+=it.qty*it.harga_jual;im[nm].b+=it.qty*it.harga_beli;}const perItem=Object.values(im).map(x=>({...x,pf:x.j-x.b})).sort((a,b)=>b.pf-a.pf);
   const trendMsg=useMemo(()=>{if(daily.length<2)return'Data kurang untuk analisis.';const ps=daily.map(d=>d.profit);const h1=ps.slice(0,Math.ceil(ps.length/2));const h2=ps.slice(Math.ceil(ps.length/2));const a1=h1.reduce((a,b)=>a+b,0)/h1.length;const a2=h2.reduce((a,b)=>a+b,0)/h2.length;const best=daily.reduce((a,b)=>a.profit>b.profit?a:b);const worst=daily.reduce((a,b)=>a.profit<b.profit?a:b);let t=a2>a1*1.05?'📈 NAIK':a2<a1*0.95?'📉 TURUN':'➡️ STABIL';return t+' · Tertinggi: '+fRp(best.profit)+' ('+best.date.slice(5)+') · Terendah: '+fRp(worst.profit)+' ('+worst.date.slice(5)+')';},[daily]);
   const maxV=Math.max(...daily.map(d=>Math.max(d.jual,Math.abs(d.profit))),1);
-  const addK=async()=>{if(!kForm.nama_bahan||!kForm.biaya){alert('Isi nama & biaya');return;}setKSav(true);const item={id:'krgn-'+Date.now(),tanggal:kForm.tanggal,nama_bahan:kForm.nama_bahan,qty:0,satuan:'',biaya:parseFloat(kForm.biaya)||0,keterangan:kForm.keterangan};try{const r=await api.post({action:'addKerugian',item});if(r.success){onKerugianAdded(item);setKForm({tanggal:today,nama_bahan:'',biaya:'',keterangan:''});setShowKF(false);}else alert('Gagal');}catch(e){alert('Koneksi');}setKSav(false);};
+  const addK=async()=>{if(!kForm.nama_bahan||!kForm.biaya){alert('Isi nama & biaya');return;}setKSav(true);const item={id:'krgn-'+Date.now(),tanggal:kForm.tanggal,nama_bahan:kForm.nama_bahan,qty:0,satuan:'',biaya:parseFloat(kForm.biaya)||0,keterangan:kForm.keterangan};try{const r=await api.post({action:'addKerugian',item});if(r.success){onKerugianAdded(item);setKForm({tanggal:today,nama_bahan:'',biaya:'',keterangan:''});setShowKF(false);}else alert('Gagal');}catch(e){alert(errMsg(e));}setKSav(false);};
   return(
     <div style={{padding:'16px',maxWidth:'960px',margin:'0 auto'}} className="fade-in">
       <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'16px',flexWrap:'wrap',gap:'10px'}}><h2>Laporan</h2><div style={{display:'flex',gap:'8px',alignItems:'center',flexWrap:'wrap'}}><input type="date" value={df} onChange={e=>setDf(e.target.value)} style={{padding:'8px 10px',fontSize:'13px'}}/><span style={{color:'var(--muted)'}}>→</span><input type="date" value={dt} onChange={e=>setDt(e.target.value)} style={{padding:'8px 10px',fontSize:'13px'}}/></div></div>
@@ -755,8 +756,8 @@ function Pengeluaran({kerugian,onKerugianAdded,onKerugianDeleted}){
   const[form,setForm]=useState({tanggal:today,nama_bahan:'',biaya:'',keterangan:''});
   const fk=kerugian.filter(k=>normDate(k.tanggal)===selD);
   const totalHari=fk.reduce((s,k)=>s+k.biaya,0);
-  const add=async()=>{if(!form.nama_bahan||!form.biaya){alert('Isi nama & biaya');return;}setSav(true);const item={id:'krgn-'+Date.now(),tanggal:form.tanggal,nama_bahan:form.nama_bahan,qty:0,satuan:'',biaya:parseFloat(form.biaya)||0,keterangan:form.keterangan};try{const r=await api.post({action:'addKerugian',item});if(r.success){onKerugianAdded(item);setForm({tanggal:selD,nama_bahan:'',biaya:'',keterangan:''});setShowF(false);}else alert('Gagal');}catch(e){alert('Koneksi');}setSav(false);};
-  const del=async(id)=>{if(!confirm('Hapus pengeluaran ini?'))return;try{const r=await api.post({action:'deleteKerugian',kerugianId:id});if(r.success)onKerugianDeleted(id);else alert('Gagal');}catch(e){alert('Koneksi');}};
+  const add=async()=>{if(!form.nama_bahan||!form.biaya){alert('Isi nama & biaya');return;}setSav(true);const item={id:'krgn-'+Date.now(),tanggal:form.tanggal,nama_bahan:form.nama_bahan,qty:0,satuan:'',biaya:parseFloat(form.biaya)||0,keterangan:form.keterangan};try{const r=await api.post({action:'addKerugian',item});if(r.success){onKerugianAdded(item);setForm({tanggal:selD,nama_bahan:'',biaya:'',keterangan:''});setShowF(false);}else alert('Gagal');}catch(e){alert(errMsg(e));}setSav(false);};
+  const del=async(id)=>{if(!confirm('Hapus pengeluaran ini?'))return;try{const r=await api.post({action:'deleteKerugian',kerugianId:id});if(r.success)onKerugianDeleted(id);else alert('Gagal');}catch(e){alert(errMsg(e));}};
   return(
     <div style={{padding:'16px',maxWidth:'720px',margin:'0 auto'}} className="fade-in">
       <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'16px',flexWrap:'wrap',gap:'8px'}}><h2>Pengeluaran Harian</h2><button onClick={()=>{setForm(p=>({...p,tanggal:selD}));setShowF(x=>!x);}} style={btn('dan')}>{showF?'✕ Tutup':'+ Tambah'}</button></div>
@@ -793,7 +794,7 @@ function KelolaAkun({allUsers,onUsersChanged}){
   const rl={operator:'Operator',staf_beli:'Staf Beli',staf_kirim:'Staf Kirim'};const rbg={operator:'var(--blue-bg)',staf_beli:'var(--green-bg)',staf_kirim:'var(--yellow-bg)'};const rc={operator:'var(--blue)',staf_beli:'var(--green-dk)',staf_kirim:'var(--yellow)'};
   const val=()=>{if(!form.name.trim())return'Nama wajib';if(!form.username.trim())return'Username wajib';if(form.password.length<4)return'Password min 4';if((allUsers||[]).find(u=>u.username===form.username))return'Username sudah ada';return'';};
   const save=async()=>{const e=val();if(e){setFe(e);return;}setSv(true);setFe('');try{const nu={id:'u-'+Date.now(),...form};const r=await api.post({action:'addUser',user:nu});if(r.success){onUsersChanged(p=>[...p,nu]);setForm({name:'',username:'',password:'',role:'staf_beli'});setSf(false);}else setFe(r.error||'Gagal');}catch(e2){setFe('Koneksi');}setSv(false);};
-  const del=async(uid)=>{setDl(true);try{const r=await api.post({action:'deleteUser',userId:uid});if(r.success){onUsersChanged(p=>p.filter(u=>u.id!==uid));setDc(null);}}catch(e){alert('Gagal');}setDl(false);};
+  const del=async(uid)=>{setDl(true);try{const r=await api.post({action:'deleteUser',userId:uid});if(r.success){onUsersChanged(p=>p.filter(u=>u.id!==uid));setDc(null);}}catch(e){alert(errMsg(e));}setDl(false);};
   const du=users.find(u=>u.id===dc);
   return(
     <div style={{padding:'16px',maxWidth:'700px',margin:'0 auto'}} className="fade-in">
