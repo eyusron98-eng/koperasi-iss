@@ -80,10 +80,13 @@ function navItems(role){
   if(role==='ceo'||role==='sekretaris')return[{id:'laporan',label:'Laporan',icon:'📈'}];
   return[];
 }
+const _parseRes=async(res)=>{const t=(await res.text()).trim();if(t.charAt(0)==='<')throw new Error('HTML_RESPONSE');try{return JSON.parse(t);}catch(e){throw new Error('BAD_JSON');}};
+const _sleep=(ms)=>new Promise(r=>setTimeout(r,ms));
 const api={
-  get:async(a,p={})=>(await fetch(API+'?'+new URLSearchParams({action:a,...p}))).json(),
-  post:async(b)=>(await fetch(API,{method:'POST',body:JSON.stringify(b)})).json()
+  get:async(a,p={})=>{let last;for(let i=0;i<3;i++){try{return await _parseRes(await fetch(API+'?'+new URLSearchParams({action:a,...p})));}catch(e){last=e;await _sleep(700*(i+1));}}throw last;},
+  post:async(b)=>_parseRes(await fetch(API,{method:'POST',body:JSON.stringify(b)}))
 };
+const errMsg=(e)=>(e&&(e.message==='HTML_RESPONSE'||e.message==='BAD_JSON'))?'Server Google sedang sibuk. Tekan Refresh untuk mencoba lagi.':(e&&e.message)||'Gagal memuat data';
 
 // ===== STYLES =====
 const S_card={background:'var(--card)',border:'1px solid var(--border)',borderRadius:'var(--radius)',padding:'16px',boxShadow:'var(--shadow)'};
@@ -825,7 +828,16 @@ function App(){
   const[view,setView]=useState(()=>{try{const s=localStorage.getItem('koperasi_session');if(s){const{user:u,ts}=JSON.parse(s);if(Date.now()-ts<30*60*1000)return navItems(u.role)[0]?.id||'dashboard';}}catch(e){}return'dashboard';});const[orders,setOrders]=useState([]);const[tugas,setTugas]=useState([]);const[pngrm,setPngrm]=useState([]);const[allUsers,setAllUsers]=useState([]);const[kerugian,setKerugian]=useState([]);const[loading,setLoading]=useState(false);const[error,setError]=useState(null);const[sideOpen,setSideOpen]=useState(false);
   useEffect(()=>{if(!user)return;const r=()=>{try{localStorage.setItem('koperasi_session',JSON.stringify({user,ts:Date.now()}))}catch(e){}};r();const ev=['click','keydown','scroll','touchstart'];ev.forEach(e=>window.addEventListener(e,r,{passive:true}));return()=>ev.forEach(e=>window.removeEventListener(e,r));},[user]);
   const stafBeli=allUsers.filter(x=>x.role==='staf_beli').map(x=>({id:x.username,nama:x.name}));
-  const loadAll=useCallback(async()=>{setLoading(true);setError(null);try{const[o,t,p,u,k]=await Promise.all([api.get('getOrders'),api.get('getTugasBeli'),api.get('getPengiriman'),api.get('getUsers'),api.get('getKerugian')]);if(!Array.isArray(o))throw new Error(o.error||'gagal');setOrders(o);setTugas(Array.isArray(t)?t:[]);setPngrm(Array.isArray(p)?p:[]);setAllUsers(Array.isArray(u)?u:[]);setKerugian(Array.isArray(k)?k:[]);}catch(e){setError(e.message);}setLoading(false);},[]);
+  const loadAll=useCallback(async()=>{setLoading(true);setError(null);try{
+    let d=null;
+    try{const r=await api.get('getAll');if(r&&Array.isArray(r.orders))d=r;}catch(e){d=null;}
+    if(!d){
+      const o=await api.get('getOrders');if(!Array.isArray(o))throw new Error(o.error||'Gagal memuat order');
+      const safe=async(a)=>{try{const r=await api.get(a);return Array.isArray(r)?r:null;}catch(e){return null;}};
+      d={orders:o,tugas:await safe('getTugasBeli'),pengiriman:await safe('getPengiriman'),users:await safe('getUsers'),kerugian:await safe('getKerugian')};
+    }
+    setOrders(d.orders);if(Array.isArray(d.tugas))setTugas(d.tugas);if(Array.isArray(d.pengiriman))setPngrm(d.pengiriman);if(Array.isArray(d.users))setAllUsers(d.users);if(Array.isArray(d.kerugian))setKerugian(d.kerugian);
+  }catch(e){setError(errMsg(e));}setLoading(false);},[]);
   useEffect(()=>{if(user)loadAll();},[user,loadAll]);
   const login=u=>{try{localStorage.setItem('koperasi_session',JSON.stringify({user:u,ts:Date.now()}))}catch(e){}setUser(u);setView(navItems(u.role)[0]?.id||'dashboard');};
   const logout=()=>{localStorage.removeItem('koperasi_session');setUser(null);setOrders([]);setTugas([]);setPngrm([]);setAllUsers([]);setKerugian([]);setError(null);};
