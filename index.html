@@ -41,9 +41,35 @@ const DAPUR=[
 ];
 
 // ===== UTILS =====
-function normDate(d){if(!d)return'';const s=String(d).trim();if(/^\d{4}-\d{2}-\d{2}$/.test(s))return s;if(s.includes('T')||s.includes('Z')){const dt=new Date(s);if(!isNaN(dt.getTime())){return dt.getFullYear()+'-'+String(dt.getMonth()+1).padStart(2,'0')+'-'+String(dt.getDate()).padStart(2,'0');}}return s.slice(0,10);}
-function todayStr(){const d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
-function nextDay(s){const d=new Date(s+'T00:00:00');d.setDate(d.getDate()+1);return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
+function normDate(d){
+  if(!d)return'';
+  try{
+    const s=String(d).trim();
+    if(!s)return'';
+    // Already YYYY-MM-DD
+    if(/^\d{4}-\d{2}-\d{2}$/.test(s))return s;
+    // YYYY-MM-DDTHH:mm:ss or with Z
+    const isoMatch=s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if(isoMatch)return isoMatch[1]+'-'+isoMatch[2]+'-'+isoMatch[3];
+    // DD/MM/YYYY or DD-MM-YYYY
+    const dmyMatch=s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})/);
+    if(dmyMatch){
+      let[,dd,mm,yy]=dmyMatch;
+      if(yy.length===2)yy='20'+yy;
+      return yy+'-'+mm.padStart(2,'0')+'-'+dd.padStart(2,'0');
+    }
+    // Try Date parse as last resort (wrapped in try)
+    try{
+      const dt=new Date(s);
+      if(!isNaN(dt.getTime())){
+        return dt.getFullYear()+'-'+String(dt.getMonth()+1).padStart(2,'0')+'-'+String(dt.getDate()).padStart(2,'0');
+      }
+    }catch(e){}
+    return s.slice(0,10);
+  }catch(e){return'';}
+}
+function todayStr(){try{const d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}catch(e){return'';}}
+function nextDay(s){try{const parts=String(s||'').split('-');if(parts.length!==3)return s;const d=new Date(parseInt(parts[0]),parseInt(parts[1])-1,parseInt(parts[2]));d.setDate(d.getDate()+1);return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}catch(e){return s;}}
 function fRp(n){if(!n||isNaN(n))return'Rp 0';return'Rp '+Math.round(n).toLocaleString('id-ID');}
 function parseRAB(t){const r=[];for(const l of t.trim().split('\n')){if(!l.trim())continue;const p=l.split('\t');if(p.length>=4){const nm=p[0].trim(),qt=parseFloat(p[1].replace(',','.'))||0,st=p[2].trim(),hj=parseInt(p[3].replace(/[^0-9]/g,''))||0;if(nm&&qt>0)r.push({nama:nm,qty:qt,satuan:st,harga_jual:hj,harga_beli:0});}}return r;}
 function navItems(role){
@@ -89,7 +115,7 @@ function StatusBadge({status}){
 }
 function Spinner(){return <div style={{display:'flex',alignItems:'center',justifyContent:'center',padding:'3rem',gap:'10px',color:'var(--muted)'}}><div style={{width:'20px',height:'20px',border:'2.5px solid var(--border)',borderTopColor:'var(--blue)',borderRadius:'50%',animation:'spin 0.8s linear infinite'}}/>Memuat...</div>;}
 function DateNav({value,onChange,label}){
-  const go=(n)=>{const d=new Date(value+'T00:00:00');d.setDate(d.getDate()+n);onChange(d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'));};
+  const go=(n)=>{try{const parts=String(value||'').split('-');if(parts.length!==3){onChange(todayStr());return;}const d=new Date(parseInt(parts[0]),parseInt(parts[1])-1,parseInt(parts[2]));d.setDate(d.getDate()+n);onChange(d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'));}catch(e){onChange(todayStr());}};
   const isToday=value===todayStr();
   return(
     <div style={{...S_card,marginBottom:'12px',display:'flex',alignItems:'center',justifyContent:'space-between',gap:'8px',padding:'10px 14px'}}>
