@@ -85,7 +85,7 @@ const _sleep=(ms)=>new Promise(r=>setTimeout(r,ms));
 const _fetchT=async(url,opt={},ms=20000)=>{const c=new AbortController();const id=setTimeout(()=>c.abort(),ms);try{return await fetch(url,{...opt,signal:c.signal});}finally{clearTimeout(id);}};
 const SAFE_RETRY=['updateOrderStatus','updateHargaJual','updateOrderItems','submitForApproval','approveOrder','rejectOrder','updateTugasStatus','updateHargaBeli','updatePengiriman','saveTugasBeli','deleteOrder','deleteKerugian','deleteUser'];
 const api={
-  get:async(a,p={})=>{let last;for(let i=0;i<3;i++){try{return await _parseRes(await _fetchT(API+'?'+new URLSearchParams({action:a,...p})));}catch(e){last=e;await _sleep(700*(i+1));}}throw last;},
+  get:async(a,p={})=>{const T=[35000,50000,60000];let last;for(let i=0;i<3;i++){try{return await _parseRes(await _fetchT(API+'?'+new URLSearchParams({action:a,...p}),{},T[i]));}catch(e){last=e;if(i<2)await _sleep(600);}}throw last;},
   post:async(b)=>{
     const tries=SAFE_RETRY.indexOf(b.action)>=0?3:1;   // aksi pembuat data baru tidak diulang
     let last;
@@ -96,7 +96,7 @@ const api={
     throw last;
   }
 };
-const errMsg=(e)=>{if(!e)return'Gagal memuat data';if(e.name==='AbortError')return'Koneksi lambat, permintaan dihentikan. Tekan Refresh.';if(e.message==='HTML_RESPONSE'||e.message==='BAD_JSON')return'Server Google sedang sibuk. Tekan Refresh untuk mencoba lagi.';return e.message||'Gagal memuat data';};
+const errMsg=(e)=>{if(!e)return'Gagal memuat data';if(e.name==='AbortError')return'Server Google lama merespons. Tekan Refresh — pemuatan kedua biasanya jauh lebih cepat.';if(e.message==='HTML_RESPONSE'||e.message==='BAD_JSON')return'Server Google sedang sibuk. Tekan Refresh untuk mencoba lagi.';return e.message||'Gagal memuat data';};
 
 // ===== STYLES =====
 const S_card={background:'var(--card)',border:'1px solid var(--border)',borderRadius:'var(--radius)',padding:'16px',boxShadow:'var(--shadow)'};
