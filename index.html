@@ -10,21 +10,30 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
 <style>
-:root{--bg:#f0f2f5;--card:#fff;--border:#e2e5ea;--text:#1a1d23;--muted:#6b7280;
---green:#0d9f6e;--green-bg:#ecfdf5;--green-dk:#065f46;
---blue:#2563eb;--blue-bg:#eff6ff;--purple:#7c3aed;--purple-bg:#f5f3ff;
---red:#dc2626;--red-bg:#fef2f2;--yellow:#d97706;--yellow-bg:#fffbeb;
---radius:12px;--shadow:0 1px 3px rgba(0,0,0,0.06)}
+:root{--bg:#f5f6fb;--card:#fff;--border:#eceef5;--text:#252a3d;--muted:#7b8198;
+--green:#34b58a;--green-bg:#e9f8f1;--green-dk:#1f7a5c;
+--blue:#5b7cf6;--blue-bg:#eef2ff;--purple:#8b72e8;--purple-bg:#f3f0ff;
+--red:#ee6a6a;--red-bg:#fff0f0;--yellow:#e8a23d;--yellow-bg:#fff7e8;
+--radius:16px;--shadow:0 2px 12px rgba(60,72,120,0.06);--ease:cubic-bezier(.2,.7,.3,1)}
 *{box-sizing:border-box;margin:0;padding:0}
-body{font-family:'Plus Jakarta Sans',system-ui,sans-serif;font-size:14px;background:var(--bg);color:var(--text);-webkit-tap-highlight-color:transparent;overflow-x:hidden}
-input,select,textarea{font-family:inherit;font-size:16px;padding:10px 14px;border:1.5px solid var(--border);border-radius:10px;background:var(--card);color:var(--text);outline:none;width:auto}
-input:focus,select:focus,textarea:focus{border-color:var(--blue);box-shadow:0 0 0 3px rgba(37,99,235,0.1)}
-button{font-family:inherit;cursor:pointer;-webkit-tap-highlight-color:transparent}
+body{font-family:'Plus Jakarta Sans',system-ui,sans-serif;font-size:14px;line-height:1.5;background:var(--bg);color:var(--text);-webkit-tap-highlight-color:transparent;overflow-x:hidden;-webkit-font-smoothing:antialiased}
+input,select,textarea{font-family:inherit;font-size:16px;padding:11px 14px;border:1.5px solid var(--border);border-radius:12px;background:#fbfbfe;color:var(--text);outline:none;width:auto;transition:border-color .2s,box-shadow .2s,background .2s}
+input:focus,select:focus,textarea:focus{border-color:var(--blue);background:#fff;box-shadow:0 0 0 4px rgba(91,124,246,0.12)}
+input::placeholder,textarea::placeholder{color:#b3b8cb}
+button{font-family:inherit;cursor:pointer;-webkit-tap-highlight-color:transparent;transition:transform .15s var(--ease),filter .2s,box-shadow .2s,background .2s,opacity .2s}
+button:hover:not(:disabled){filter:brightness(.97);transform:translateY(-1px)}
+button:active:not(:disabled){transform:translateY(0) scale(.98)}
+button:disabled{cursor:not-allowed}
 table{border-collapse:collapse;width:100%}
-h2{font-size:20px;font-weight:700;letter-spacing:-0.3px}
+tbody tr{transition:background .15s}
+tbody tr:hover{background:#f8f9fe}
+h2{font-size:21px;font-weight:700;letter-spacing:-0.3px}
+::-webkit-scrollbar{width:8px;height:8px}
+::-webkit-scrollbar-thumb{background:#dfe2ee;border-radius:8px}
+::-webkit-scrollbar-track{background:transparent}
 @keyframes spin{to{transform:rotate(360deg)}}
-@keyframes fadeIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
-.fade-in{animation:fadeIn 0.25s ease}
+@keyframes fadeIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+.fade-in{animation:fadeIn 0.3s var(--ease)}
 @media(max-width:600px){.hide-mobile{display:none!important}.grid-1-mobile{grid-template-columns:1fr!important}}
 </style>
 </head>
@@ -99,12 +108,12 @@ const api={
 const errMsg=(e)=>{if(!e)return'Gagal memuat data';if(e.name==='AbortError')return'Server Google lama merespons. Tekan Refresh — pemuatan kedua biasanya jauh lebih cepat.';if(e.message==='HTML_RESPONSE'||e.message==='BAD_JSON')return'Server Google sedang sibuk. Tekan Refresh untuk mencoba lagi.';return e.message||'Gagal memuat data';};
 
 // ===== STYLES =====
-const S_card={background:'var(--card)',border:'1px solid var(--border)',borderRadius:'var(--radius)',padding:'16px',boxShadow:'var(--shadow)'};
-const S_met={background:'var(--bg)',borderRadius:'10px',padding:'14px'};
+const S_card={background:'var(--card)',border:'1px solid var(--border)',borderRadius:'var(--radius)',padding:'18px',boxShadow:'var(--shadow)'};
+const S_met={background:'linear-gradient(180deg,#fafbff,#f3f5fd)',border:'1px solid var(--border)',borderRadius:'14px',padding:'14px 16px'};
 const S_th={padding:'10px 12px',fontWeight:600,color:'var(--muted)',fontSize:'11px',textAlign:'left',textTransform:'uppercase',letterSpacing:'0.5px'};
 const S_td={padding:'10px 12px',fontSize:'13px',borderBottom:'1px solid var(--border)'};
 function btn(v,full){
-  const b={padding:'10px 18px',fontSize:'13px',fontWeight:600,borderRadius:'10px',cursor:'pointer',border:'none',display:'inline-flex',alignItems:'center',gap:'6px',justifyContent:'center'};
+  const b={padding:'10px 18px',fontSize:'13px',fontWeight:600,borderRadius:'12px',cursor:'pointer',border:'none',display:'inline-flex',alignItems:'center',gap:'6px',justifyContent:'center'};
   if(full)b.width='100%';
   if(v==='suc')return{...b,background:'var(--green)',color:'#fff'};
   if(v==='pri')return{...b,background:'var(--blue)',color:'#fff'};
@@ -114,7 +123,7 @@ function btn(v,full){
   return{...b,background:'transparent',color:'var(--muted)',border:'1.5px solid var(--border)'};
 }
 function bdg(v){
-  const b={fontSize:'11px',padding:'4px 10px',borderRadius:'20px',fontWeight:600,display:'inline-block'};
+  const b={fontSize:'11px',padding:'4px 11px',borderRadius:'20px',fontWeight:600,display:'inline-block'};
   if(v==='suc')return{...b,background:'var(--green-bg)',color:'var(--green-dk)'};
   if(v==='war')return{...b,background:'var(--yellow-bg)',color:'var(--yellow)'};
   if(v==='dan')return{...b,background:'var(--red-bg)',color:'var(--red)'};
@@ -144,9 +153,9 @@ function DateNav({value,onChange,label}){
 }
 function TabBar({tabs,active,onChange}){
   return(
-    <div style={{display:'flex',gap:'2px',marginBottom:'16px',overflowX:'auto',WebkitOverflowScrolling:'touch',borderBottom:'2px solid var(--border)'}}>
+    <div style={{display:'flex',gap:'2px',marginBottom:'16px',overflowX:'auto',WebkitOverflowScrolling:'touch',borderBottom:'1px solid var(--border)'}}>
       {tabs.map(([id,lbl,cnt])=>(
-        <button key={id} onClick={()=>onChange(id)} style={{padding:'10px 16px',fontSize:'13px',fontWeight:active===id?700:500,border:'none',background:'transparent',cursor:'pointer',borderBottom:active===id?'2.5px solid var(--blue)':'2.5px solid transparent',color:active===id?'var(--blue)':'var(--muted)',marginBottom:'-2px',whiteSpace:'nowrap'}}>
+        <button key={id} onClick={()=>onChange(id)} style={{padding:'10px 16px',fontSize:'13px',fontWeight:active===id?700:500,border:'none',background:'transparent',cursor:'pointer',borderBottom:active===id?'3px solid var(--blue)':'3px solid transparent',color:active===id?'var(--blue)':'var(--muted)',marginBottom:'-1px',whiteSpace:'nowrap'}}>
           {lbl}{cnt>0 && <span style={{...bdg('war'),fontSize:'10px',marginLeft:'6px',padding:'2px 6px'}}>{cnt}</span>}
         </button>
       ))}
@@ -159,10 +168,10 @@ function Login({onLogin}){
   const[u,setU]=useState('');const[p,setP]=useState('');const[err,setErr]=useState('');const[ld,setLd]=useState(false);const[sp,setSp]=useState(false);
   const go=async()=>{if(!u||!p){setErr('Isi username dan password');return;}setLd(true);setErr('');try{const r=await api.get('login',{username:u,password:p});if(r.success)onLogin(r.user);else setErr(r.message||'Salah');}catch(e){setErr('Tidak bisa terhubung.');}setLd(false);};
   return(
-    <div style={{minHeight:'100vh',display:'flex',alignItems:'center',justifyContent:'center',background:'linear-gradient(135deg,#ecfdf5 0%,#eff6ff 50%,#f5f3ff 100%)',padding:'16px'}}>
-      <div style={{...S_card,width:'100%',maxWidth:'380px',padding:'32px'}} className="fade-in">
+    <div style={{minHeight:'100vh',display:'flex',alignItems:'center',justifyContent:'center',background:'linear-gradient(135deg,#e9f8f1 0%,#eef2ff 55%,#f3f0ff 100%)',padding:'16px'}}>
+      <div style={{...S_card,width:'100%',maxWidth:'380px',padding:'34px',borderRadius:'24px',boxShadow:'0 12px 40px rgba(60,72,120,0.12)'}} className="fade-in">
         <div style={{textAlign:'center',marginBottom:'28px'}}>
-          <div style={{width:'60px',height:'60px',borderRadius:'16px',background:'linear-gradient(135deg,var(--green),#059669)',color:'#fff',display:'flex',alignItems:'center',justifyContent:'center',margin:'0 auto 12px',fontSize:'24px',fontWeight:700}}>K</div>
+          <div style={{width:'60px',height:'60px',borderRadius:'16px',background:'linear-gradient(135deg,#5fd0a5,var(--green))',color:'#fff',display:'flex',alignItems:'center',justifyContent:'center',margin:'0 auto 12px',fontSize:'24px',fontWeight:700}}>K</div>
           <div style={{fontSize:'11px',color:'var(--muted)',letterSpacing:'1.5px',textTransform:'uppercase'}}>Koperasi Insan Sinergi Sejahtera</div>
           <div style={{fontSize:'20px',fontWeight:700,marginTop:'4px'}}>Sistem Bahan Dapur</div>
         </div>
@@ -180,15 +189,15 @@ function Sidebar({user,view,setView,onLogout,mobileOpen,closeMobile}){
   const items=navItems(user.role);
   const roleLabel={admin:'Admin',operator:'Operator',staf_beli:'Staf Pembelian',staf_kirim:'Staf Pengiriman',ceo:'CEO',sekretaris:'Sekretaris'}[user.role]||user.role;
   const inner=(
-    <div style={{width:'230px',flexShrink:0,background:'var(--card)',borderRight:'1px solid var(--border)',display:'flex',flexDirection:'column',height:'100%'}}>
+    <div style={{width:'230px',flexShrink:0,background:'var(--card)',borderRight:'1px solid var(--border)',boxShadow:'4px 0 24px rgba(60,72,120,0.04)',display:'flex',flexDirection:'column',height:'100%'}}>
       <div style={{padding:'16px',borderBottom:'1px solid var(--border)',display:'flex',alignItems:'center',gap:'10px'}}>
-        <div style={{width:'34px',height:'34px',borderRadius:'10px',background:'linear-gradient(135deg,var(--green),#059669)',color:'#fff',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'14px',fontWeight:700}}>K</div>
+        <div style={{width:'34px',height:'34px',borderRadius:'10px',background:'linear-gradient(135deg,#5fd0a5,var(--green))',color:'#fff',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'14px',fontWeight:700}}>K</div>
         <div><div style={{fontSize:'10px',color:'var(--muted)',letterSpacing:'0.5px'}}>KOPERASI ISS</div><div style={{fontSize:'13px',fontWeight:700}}>Bahan Dapur</div></div>
       </div>
-      <div style={{padding:'12px 16px',borderBottom:'1px solid var(--border)',background:'var(--bg)'}}><div style={{fontSize:'14px',fontWeight:700}}>{user.name}</div><div style={{fontSize:'12px',color:'var(--muted)'}}>{roleLabel}</div></div>
+      <div style={{padding:'12px 16px',borderBottom:'1px solid var(--border)',background:'linear-gradient(180deg,#fafbff,#f5f6fb)'}}><div style={{fontSize:'14px',fontWeight:700}}>{user.name}</div><div style={{fontSize:'12px',color:'var(--muted)'}}>{roleLabel}</div></div>
       <nav style={{flex:1,padding:'8px',overflowY:'auto'}}>
         {items.map(it=>(
-          <button key={it.id} onClick={()=>{setView(it.id);closeMobile();}} style={{display:'flex',alignItems:'center',gap:'10px',width:'100%',textAlign:'left',padding:'10px 12px',fontSize:'13px',background:view===it.id?'var(--blue-bg)':'transparent',color:view===it.id?'var(--blue)':'var(--muted)',border:'none',borderRadius:'10px',cursor:'pointer',marginBottom:'2px',fontWeight:view===it.id?700:500}}>
+          <button key={it.id} onClick={()=>{setView(it.id);closeMobile();}} style={{display:'flex',alignItems:'center',gap:'10px',width:'100%',textAlign:'left',padding:'11px 12px',fontSize:'13px',background:view===it.id?'var(--blue-bg)':'transparent',color:view===it.id?'var(--blue)':'var(--muted)',border:'none',borderRadius:'12px',cursor:'pointer',marginBottom:'2px',fontWeight:view===it.id?700:500}}>
             <span>{it.icon}</span>{it.label}
           </button>
         ))}
@@ -201,7 +210,7 @@ function Sidebar({user,view,setView,onLogout,mobileOpen,closeMobile}){
   return(
     <React.Fragment>
       <div className="hide-mobile" style={{display:'flex',height:'100%'}}>{inner}</div>
-      {mobileOpen && <div style={{position:'fixed',top:0,left:0,right:0,bottom:0,background:'rgba(0,0,0,0.5)',zIndex:999}} onClick={closeMobile}/>}
+      {mobileOpen && <div style={{position:'fixed',top:0,left:0,right:0,bottom:0,background:'rgba(37,42,61,0.35)',backdropFilter:'blur(4px)',zIndex:999}} onClick={closeMobile}/>}
       <div style={{position:'fixed',top:0,left:0,bottom:0,zIndex:1000,transform:mobileOpen?'translateX(0)':'translateX(-100%)',transition:'transform 0.25s ease',display:'none'}} className="show-mobile">{inner}</div>
       <style>{`@media(min-width:601px){.show-mobile{display:none!important}}@media(max-width:600px){.show-mobile{display:block!important}}`}</style>
     </React.Fragment>
@@ -222,7 +231,7 @@ function MobileTopBar({user,onMenu,title}){
       <div className="mob-bar" style={{display:'none',alignItems:'center',gap:'12px',padding:'12px 16px',background:'var(--card)',borderBottom:'1px solid var(--border)',position:'sticky',top:0,zIndex:100}}>
         <button onClick={onMenu} style={{background:'none',border:'none',fontSize:'22px',padding:'4px',cursor:'pointer'}}>☰</button>
         <div style={{flex:1,fontWeight:700,fontSize:'15px'}}>{title||'Koperasi ISS'}</div>
-        <div style={{width:'32px',height:'32px',borderRadius:'8px',background:'linear-gradient(135deg,var(--green),#059669)',color:'#fff',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'12px',fontWeight:700}}>{user.name?.charAt(0)}</div>
+        <div style={{width:'32px',height:'32px',borderRadius:'8px',background:'linear-gradient(135deg,#5fd0a5,var(--green))',color:'#fff',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'12px',fontWeight:700}}>{user.name?.charAt(0)}</div>
       </div>
       <style>{`@media(max-width:600px){.mob-bar{display:flex!important}}`}</style>
     </React.Fragment>
@@ -241,12 +250,12 @@ function Dashboard({orders,loading,error,onRefresh,onCancelOrder,onDeleteOrder,o
   const handleDelete=async()=>{setDeleting(true);try{const r=await api.post({action:'deleteOrder',orderId:did});if(r.success){onDeleteOrder(did);setDid(null);alert('Order dihapus.');}else alert('Gagal');}catch(e){alert(errMsg(e));}setDeleting(false);};
   return(
     <div style={{padding:'16px',maxWidth:'960px',margin:'0 auto'}} className="fade-in">
-      {cid && <div style={{position:'fixed',top:0,left:0,right:0,bottom:0,background:'rgba(0,0,0,0.5)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:1000,padding:'16px'}} onClick={()=>setCid(null)}><div style={{...S_card,maxWidth:'360px',width:'100%',padding:'24px'}} onClick={e=>e.stopPropagation()}><div style={{fontSize:'16px',fontWeight:700,textAlign:'center',marginBottom:'16px'}}>Batalkan Order?</div><div style={{fontSize:'14px',color:'var(--muted)',textAlign:'center',marginBottom:'20px'}}>Order {cd?.nama} tgl {co?.tanggal_kirim}</div><div style={{display:'flex',gap:'10px'}}><button onClick={()=>setCid(null)} style={{...btn(),flex:1}}>Tidak</button><button onClick={()=>{onCancelOrder(cid);setCid(null);}} style={{...btn('dan'),flex:1}}>Ya, Batalkan</button></div></div></div>}
-      {did && <div style={{position:'fixed',top:0,left:0,right:0,bottom:0,background:'rgba(0,0,0,0.5)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:1000,padding:'16px'}} onClick={()=>setDid(null)}><div style={{...S_card,maxWidth:'360px',width:'100%',padding:'24px'}} onClick={e=>e.stopPropagation()}><div style={{fontSize:'30px',textAlign:'center',marginBottom:'8px'}}>🗑️</div><div style={{fontSize:'16px',fontWeight:700,textAlign:'center',marginBottom:'8px'}}>Hapus Order Permanen?</div><div style={{fontSize:'13px',color:'var(--muted)',textAlign:'center',marginBottom:'6px'}}>Order <strong>{dDapur?.nama}</strong> · {normDate(dOrder?.tanggal_kirim)}</div><div style={{fontSize:'12px',color:'var(--red)',textAlign:'center',marginBottom:'20px'}}>Data order, item, dan pengiriman akan dihapus. Tidak bisa dikembalikan.</div><div style={{display:'flex',gap:'10px'}}><button onClick={()=>setDid(null)} style={{...btn(),flex:1}}>Batal</button><button onClick={handleDelete} disabled={deleting} style={{...btn('dan'),flex:1}}>{deleting?'Menghapus...':'Ya, Hapus'}</button></div></div></div>}
-      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'20px',flexWrap:'wrap',gap:'8px'}}><h2>Dashboard</h2><button onClick={onRefresh} style={{...btn(),padding:'8px 14px',fontSize:'12px'}}>↻ Refresh</button></div>
-      {pending>0&&isAdmin && <div style={{...S_card,marginBottom:'16px',border:'2px solid #c4b5fd',background:'var(--purple-bg)'}}><div style={{fontSize:'14px',fontWeight:700,color:'var(--purple)'}}>🔔 {pending} order menunggu approval</div></div>}
+      {cid && <div style={{position:'fixed',top:0,left:0,right:0,bottom:0,background:'rgba(37,42,61,0.35)',backdropFilter:'blur(4px)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:1000,padding:'16px'}} onClick={()=>setCid(null)}><div style={{...S_card,maxWidth:'360px',width:'100%',padding:'24px'}} onClick={e=>e.stopPropagation()}><div style={{fontSize:'16px',fontWeight:700,textAlign:'center',marginBottom:'16px'}}>Batalkan Order?</div><div style={{fontSize:'14px',color:'var(--muted)',textAlign:'center',marginBottom:'20px'}}>Order {cd?.nama} tgl {co?.tanggal_kirim}</div><div style={{display:'flex',gap:'10px'}}><button onClick={()=>setCid(null)} style={{...btn(),flex:1}}>Tidak</button><button onClick={()=>{onCancelOrder(cid);setCid(null);}} style={{...btn('dan'),flex:1}}>Ya, Batalkan</button></div></div></div>}
+      {did && <div style={{position:'fixed',top:0,left:0,right:0,bottom:0,background:'rgba(37,42,61,0.35)',backdropFilter:'blur(4px)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:1000,padding:'16px'}} onClick={()=>setDid(null)}><div style={{...S_card,maxWidth:'360px',width:'100%',padding:'24px'}} onClick={e=>e.stopPropagation()}><div style={{fontSize:'30px',textAlign:'center',marginBottom:'8px'}}>🗑️</div><div style={{fontSize:'16px',fontWeight:700,textAlign:'center',marginBottom:'8px'}}>Hapus Order Permanen?</div><div style={{fontSize:'13px',color:'var(--muted)',textAlign:'center',marginBottom:'6px'}}>Order <strong>{dDapur?.nama}</strong> · {normDate(dOrder?.tanggal_kirim)}</div><div style={{fontSize:'12px',color:'var(--red)',textAlign:'center',marginBottom:'20px'}}>Data order, item, dan pengiriman akan dihapus. Tidak bisa dikembalikan.</div><div style={{display:'flex',gap:'10px'}}><button onClick={()=>setDid(null)} style={{...btn(),flex:1}}>Batal</button><button onClick={handleDelete} disabled={deleting} style={{...btn('dan'),flex:1}}>{deleting?'Menghapus...':'Ya, Hapus'}</button></div></div></div>}
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'20px',flexWrap:'wrap',gap:'8px'}}><h2>Dashboard</h2><div style={{display:'flex',alignItems:'center',gap:'10px'}}>{loading && orders.length>0 && <span style={{fontSize:'12px',color:'var(--muted)',display:'inline-flex',alignItems:'center',gap:'6px'}}><span style={{width:'12px',height:'12px',border:'2px solid var(--border)',borderTopColor:'var(--blue)',borderRadius:'50%',animation:'spin 0.8s linear infinite',display:'inline-block'}}/>Memperbarui...</span>}<button onClick={onRefresh} disabled={loading} style={{...btn(),padding:'8px 14px',fontSize:'12px',opacity:loading?0.6:1}}>↻ Refresh</button></div></div>
+      {pending>0&&isAdmin && <div style={{...S_card,marginBottom:'16px',border:'1px solid #ddd4fb',background:'var(--purple-bg)'}}><div style={{fontSize:'14px',fontWeight:700,color:'var(--purple)'}}>🔔 {pending} order menunggu approval</div></div>}
       {error && <div style={{padding:'14px',background:'var(--red-bg)',borderRadius:'var(--radius)',color:'var(--red)',marginBottom:'16px'}}>Gagal: {error}</div>}
-      {loading ? <Spinner/> : (
+      {loading && !orders.length ? <Spinner/> : (
         <React.Fragment>
           <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(140px,1fr))',gap:'10px',marginBottom:'20px'}}>
             <div style={S_met}><div style={{fontSize:'11px',color:'var(--muted)',fontWeight:600}}>Total Order</div><div style={{fontSize:'20px',fontWeight:700}}>{orders.length}</div></div>
@@ -807,7 +816,7 @@ function KelolaAkun({allUsers,onUsersChanged}){
   const du=users.find(u=>u.id===dc);
   return(
     <div style={{padding:'16px',maxWidth:'700px',margin:'0 auto'}} className="fade-in">
-      {dc&&<div style={{position:'fixed',top:0,left:0,right:0,bottom:0,background:'rgba(0,0,0,0.5)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:1000,padding:'16px'}} onClick={()=>setDc(null)}><div style={{...S_card,maxWidth:'360px',width:'100%',padding:'24px'}} onClick={e=>e.stopPropagation()}><div style={{fontSize:'16px',fontWeight:700,textAlign:'center',marginBottom:'16px'}}>Hapus Akun?</div><div style={{fontSize:'14px',color:'var(--muted)',textAlign:'center',marginBottom:'20px'}}>Akun <strong>{du?.name}</strong> ({du?.username})</div><div style={{display:'flex',gap:'10px'}}><button onClick={()=>setDc(null)} style={{...btn(),flex:1}}>Batal</button><button onClick={()=>del(dc)} disabled={dl} style={{...btn('dan'),flex:1}}>{dl?'...':'Hapus'}</button></div></div></div>}
+      {dc&&<div style={{position:'fixed',top:0,left:0,right:0,bottom:0,background:'rgba(37,42,61,0.35)',backdropFilter:'blur(4px)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:1000,padding:'16px'}} onClick={()=>setDc(null)}><div style={{...S_card,maxWidth:'360px',width:'100%',padding:'24px'}} onClick={e=>e.stopPropagation()}><div style={{fontSize:'16px',fontWeight:700,textAlign:'center',marginBottom:'16px'}}>Hapus Akun?</div><div style={{fontSize:'14px',color:'var(--muted)',textAlign:'center',marginBottom:'20px'}}>Akun <strong>{du?.name}</strong> ({du?.username})</div><div style={{display:'flex',gap:'10px'}}><button onClick={()=>setDc(null)} style={{...btn(),flex:1}}>Batal</button><button onClick={()=>del(dc)} disabled={dl} style={{...btn('dan'),flex:1}}>{dl?'...':'Hapus'}</button></div></div></div>}
       <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'20px',flexWrap:'wrap',gap:'8px'}}><h2>Kelola Akun</h2><button onClick={()=>{setSf(x=>!x);setFe('');}} style={btn('pri')}>{sf?'✕ Tutup':'+ Buat Akun'}</button></div>
       {sf&&<div style={{...S_card,marginBottom:'16px',border:'2px solid var(--green)'}} className="fade-in">
         <div style={{fontSize:'15px',fontWeight:700,marginBottom:'14px',color:'var(--green-dk)'}}>Buat Akun Baru</div>
@@ -832,10 +841,16 @@ function KelolaAkun({allUsers,onUsersChanged}){
   );
 }
 
+// ===== CACHE DATA (stale-while-revalidate) =====
+const CACHE_KEY='koperasi_cache_v1';
+function readCache(user){try{if(!user)return null;const c=JSON.parse(localStorage.getItem(CACHE_KEY)||'null');if(c&&c.u===user.username&&c.d&&Array.isArray(c.d.orders))return c.d;}catch(e){}return null;}
+function writeCache(user,d){try{localStorage.setItem(CACHE_KEY,JSON.stringify({u:user.username,ts:Date.now(),d:{...d,users:Array.isArray(d.users)?d.users.map(({password,...x})=>x):d.users}}));}catch(e){}}
+function clearCache(){try{localStorage.removeItem(CACHE_KEY);}catch(e){}}
+
 // ===== MAIN APP =====
 function App(){
-  const[user,setUser]=useState(()=>{try{const s=localStorage.getItem('koperasi_session');if(s){const{user:u,ts}=JSON.parse(s);if(Date.now()-ts<30*60*1000)return u;localStorage.removeItem('koperasi_session');}return null;}catch(e){return null;}});
-  const[view,setView]=useState(()=>{try{const s=localStorage.getItem('koperasi_session');if(s){const{user:u,ts}=JSON.parse(s);if(Date.now()-ts<30*60*1000)return navItems(u.role)[0]?.id||'dashboard';}}catch(e){}return'dashboard';});const[orders,setOrders]=useState([]);const[tugas,setTugas]=useState([]);const[pngrm,setPngrm]=useState([]);const[allUsers,setAllUsers]=useState([]);const[kerugian,setKerugian]=useState([]);const[loading,setLoading]=useState(false);const[error,setError]=useState(null);const[sideOpen,setSideOpen]=useState(false);
+  const[user,setUser]=useState(()=>{try{const s=localStorage.getItem('koperasi_session');if(s){const{user:u,ts}=JSON.parse(s);if(Date.now()-ts<30*60*1000)return u;localStorage.removeItem('koperasi_session');clearCache();}return null;}catch(e){return null;}});
+  const[view,setView]=useState(()=>{try{const s=localStorage.getItem('koperasi_session');if(s){const{user:u,ts}=JSON.parse(s);if(Date.now()-ts<30*60*1000)return navItems(u.role)[0]?.id||'dashboard';}}catch(e){}return'dashboard';});const[c0]=useState(()=>readCache(user)||{});const[orders,setOrders]=useState(c0.orders||[]);const[tugas,setTugas]=useState(c0.tugas||[]);const[pngrm,setPngrm]=useState(c0.pengiriman||[]);const[allUsers,setAllUsers]=useState(c0.users||[]);const[kerugian,setKerugian]=useState(c0.kerugian||[]);const[loading,setLoading]=useState(false);const[error,setError]=useState(null);const[sideOpen,setSideOpen]=useState(false);
   useEffect(()=>{if(!user)return;const r=()=>{try{localStorage.setItem('koperasi_session',JSON.stringify({user,ts:Date.now()}))}catch(e){}};r();const ev=['click','keydown','scroll','touchstart'];ev.forEach(e=>window.addEventListener(e,r,{passive:true}));return()=>ev.forEach(e=>window.removeEventListener(e,r));},[user]);
   const stafBeli=allUsers.filter(x=>x.role==='staf_beli').map(x=>({id:x.username,nama:x.name}));
   const loadAll=useCallback(async()=>{setLoading(true);setError(null);try{
@@ -847,10 +862,11 @@ function App(){
       d={orders:o,tugas:await safe('getTugasBeli'),pengiriman:await safe('getPengiriman'),users:await safe('getUsers'),kerugian:await safe('getKerugian')};
     }
     setOrders(d.orders);if(Array.isArray(d.tugas))setTugas(d.tugas);if(Array.isArray(d.pengiriman))setPngrm(d.pengiriman);if(Array.isArray(d.users))setAllUsers(d.users);if(Array.isArray(d.kerugian))setKerugian(d.kerugian);
-  }catch(e){setError(errMsg(e));}setLoading(false);},[]);
+    writeCache(user,d);
+  }catch(e){setError(errMsg(e));}setLoading(false);},[user]);
   useEffect(()=>{if(user)loadAll();},[user,loadAll]);
-  const login=u=>{try{localStorage.setItem('koperasi_session',JSON.stringify({user:u,ts:Date.now()}))}catch(e){}setUser(u);setView(navItems(u.role)[0]?.id||'dashboard');};
-  const logout=()=>{localStorage.removeItem('koperasi_session');setUser(null);setOrders([]);setTugas([]);setPngrm([]);setAllUsers([]);setKerugian([]);setError(null);};
+  const login=u=>{const c=readCache(u);if(c){setOrders(c.orders||[]);setTugas(c.tugas||[]);setPngrm(c.pengiriman||[]);setAllUsers(c.users||[]);setKerugian(c.kerugian||[]);}try{localStorage.setItem('koperasi_session',JSON.stringify({user:u,ts:Date.now()}))}catch(e){}setUser(u);setView(navItems(u.role)[0]?.id||'dashboard');};
+  const logout=()=>{localStorage.removeItem('koperasi_session');clearCache();setUser(null);setOrders([]);setTugas([]);setPngrm([]);setAllUsers([]);setKerugian([]);setError(null);};
   const cancelOrder=(oid)=>{setOrders(p=>p.map(o=>o.id===oid?{...o,status:'cancelled'}:o));api.post({action:'updateOrderStatus',orderId:oid,status:'cancelled'});};
   const deleteOrder=(oid)=>{setOrders(p=>p.filter(o=>o.id!==oid));};
   const[editOrder,setEditOrder]=useState(null);
